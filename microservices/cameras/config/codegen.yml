@@ -1,0 +1,4 @@
+package: server
+generate:
+  chi-server: true
+output: microservices/cameras/autogen/server/interface.go

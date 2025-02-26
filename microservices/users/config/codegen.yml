@@ -1,0 +1,4 @@
+package: server
+generate:
+  chi-server: true
+output: microservices/users/autogen/server/interface.go
