@@ -1,20 +1,20 @@
 package bot
 
 import (
+	"bytes"
 	"fmt"
-	"log"
 	"strconv"
+	"strings"
 
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/models"
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	logrus "github.com/sirupsen/logrus"
 )
 
-func (bot *Bot) HandleMessage(msg *tg.Message) {
-	if msg.Text == "/start" || msg.Text == "Начать" {
+func (bot *Bot) HandleMessage(msg *tg.Message) error {
+	if msg.Text == "/start" || msg.Text == start {
 		user, err := bot.usersAPI.GetUserByChatID(msg.Chat.ID)
 		if err != nil {
-			logrus.Errorf("Invalid get user by chat id: %s", err)
+			return fmt.Errorf("Invalid get user by chat id: %s", err)
 		}
 
 		if msg.Chat.ID == bot.admin && user == (models.User{}) {
@@ -23,36 +23,33 @@ func (bot *Bot) HandleMessage(msg *tg.Message) {
 				Username: msg.From.UserName,
 				Name:     msg.From.FirstName,
 				Is_Admin: true,
-				Status:   "approved",
+				Status:   approved,
 			})
 			if err != nil || !ok {
-				logrus.Errorf("Invalid add user: %s", err)
+				return fmt.Errorf("Invalid add user: %s", err)
 			}
 		}
 
 		switch user.Status {
-		case "approved":
+		case approved:
 			buttons := tg.NewInlineKeyboardMarkup(
 				tg.NewInlineKeyboardRow(
-					tg.NewInlineKeyboardButtonData("Начать", toMain),
+					tg.NewInlineKeyboardButtonData(start, toMain),
 				),
 			)
 
-			msg := tg.NewMessage(msg.Chat.ID, "Добро пожаловать! Нажмите кнопку, чтобы начать испольование бота.")
-			msg.ReplyMarkup = buttons
-
-			if _, err := bot.tgAPI.Send(msg); err != nil {
-				log.Printf("Can not send msg: %S", err)
+			if err := bot.SendMessage(msg.Chat.ID, "Добро пожаловать! Нажмите кнопку, чтобы начать испольование бота.", &buttons); err != nil {
+				return fmt.Errorf("Can not send msg: %s", err)
 			}
-		case "pending":
+		case pending:
 			msg := tg.NewMessage(msg.Chat.ID, "Ожидает подтверждения.")
 			if _, err := bot.tgAPI.Send(msg); err != nil {
-				log.Printf("Can not send msg: %S", err)
+				return fmt.Errorf("Can not send msg: %s", err)
 			}
-		case "rejected":
+		case rejected:
 			msg := tg.NewMessage(msg.Chat.ID, "❌ Вам отказано в доступе.")
 			if _, err := bot.tgAPI.Send(msg); err != nil {
-				log.Printf("Can not send msg: %S", err)
+				return fmt.Errorf("Can not send msg: %s", err)
 			}
 
 		}
@@ -63,10 +60,10 @@ func (bot *Bot) HandleMessage(msg *tg.Message) {
 				Username: msg.From.UserName,
 				Name:     msg.From.FirstName,
 				Is_Admin: false,
-				Status:   "pending",
+				Status:   pending,
 			})
 			if err != nil || !ok {
-				logrus.Errorf("Invalid add user: %s", err)
+				return fmt.Errorf("Invalid add user: %s", err)
 			}
 
 			msgToAdmin := tg.NewMessage(bot.admin,
@@ -75,35 +72,74 @@ func (bot *Bot) HandleMessage(msg *tg.Message) {
 					msg.From.UserName,
 					msg.From.ID))
 
+			fromChatID := strconv.Itoa(int(msg.From.ID))
 			keyboard := tg.NewInlineKeyboardMarkup(
 				tg.NewInlineKeyboardRow(
-					tg.NewInlineKeyboardButtonData("✅ Добавить", "approve:"+strconv.FormatInt(msg.From.ID, 10)),
-					tg.NewInlineKeyboardButtonData("❌ Отклонить", "reject:"+strconv.FormatInt(msg.From.ID, 10)),
+					tg.NewInlineKeyboardButtonData("✅ Добавить", fmt.Sprintf("%s:%s", approve, fromChatID)),
+					tg.NewInlineKeyboardButtonData("❌ Отклонить", fmt.Sprintf("%s:%s", reject, fromChatID)),
 				),
 			)
 
 			msgToAdmin.ReplyMarkup = keyboard
-			bot.tgAPI.Send(msgToAdmin)
+			if _, err := bot.tgAPI.Send(msgToAdmin); err != nil {
+				return fmt.Errorf("Can not send msg: %s", err)
+			}
 
 			// Уведомляем пользователя
 			newMsg, err := bot.tgAPI.Send(tg.NewMessage(msg.From.ID, "Ваш запрос отправлен администратору на проверку. Ожидайте."))
 			if err != nil {
-				log.Printf("Can not send msg: %S", err)
+				return fmt.Errorf("Can not send msg: %s", err)
 			}
 			LastActions[msg.From.ID] = newMsg.MessageID
 		}
 	} else {
 		msg := tg.NewMessage(msg.Chat.ID, "Я не знаю такую команду :(\nЧтобы начать мной пользоваться, отправьте мне слово \"Начать\"")
 		if _, err := bot.tgAPI.Send(msg); err != nil {
-			log.Printf("Can not send msg: %S", err)
+			return fmt.Errorf("Can not send msg: %s", err)
 		}
 	}
+
+	return nil
 }
 
-func (bot *Bot) MakeMessage(update tg.Update, desc string) {
+func (bot *Bot) MakeMessage(update tg.Update, desc string) error {
 	msg := tg.NewEditMessageText(update.CallbackQuery.Message.Chat.ID, update.CallbackQuery.Message.MessageID, desc)
 
 	if _, err := bot.tgAPI.Send(msg); err != nil {
-		log.Printf("Can not send msg: %S", err)
+		return fmt.Errorf("Can not send msg: %w", err)
 	}
+
+	return nil
+}
+
+func (bot *Bot) NotifyReady(notify models.Notify) error {
+	parts := strings.Split(notify.FilePath, "/")
+	data, err := bot.camerasAPI.GetFile(parts[1], parts[2])
+	if err != nil {
+		return fmt.Errorf("Invalid get file: %w", err)
+	}
+
+	reader := bytes.NewReader(data)
+
+	doc := tg.FileReader{
+		Name:   notify.FilePath,
+		Reader: reader,
+	}
+
+	if notify.Format == "image" {
+		msg := tg.NewPhoto(notify.ChatID, doc)
+		_, err = bot.tgAPI.Send(msg)
+		if err != nil {
+			return fmt.Errorf("Invalid send file: %w", err)
+		}
+	} else {
+		msg := tg.NewVideo(notify.ChatID, doc)
+		_, err = bot.tgAPI.Send(msg)
+		if err != nil {
+			return fmt.Errorf("Invalid send file: %w", err)
+		}
+
+	}
+
+	return nil
 }

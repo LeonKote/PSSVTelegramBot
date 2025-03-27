@@ -1,6 +1,8 @@
 package service
 
 import (
+	"bytes"
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -10,17 +12,20 @@ import (
 	"github.com/Impisigmatus/service_core/utils"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/autogen/server"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/internal/models"
-	"github.com/jmoiron/sqlx"
+	"github.com/google/uuid"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/minio/minio-go/v7"
 )
 
 type Transport struct {
-	srv *Service
+	app *Application
+	ctx context.Context
 }
 
-func NewTransport(db *sqlx.DB) server.ServerInterface {
+func NewTransport(ctx context.Context, app *Application) server.ServerInterface {
 	return &Transport{
-		srv: NewService(db),
+		app: app,
+		ctx: ctx,
 	}
 }
 
@@ -52,7 +57,7 @@ func (transport *Transport) PostApiCamerasAdd(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := transport.srv.AddCamera(camera); err != nil {
+	if err := transport.app.repo.AddCamera(camera); err != nil {
 		utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось добавить пользователя")
 		return
 	}
@@ -62,20 +67,20 @@ func (transport *Transport) PostApiCamerasAdd(w http.ResponseWriter, r *http.Req
 
 // Set godoc
 //
-// @Router /api/cameras/delete-{id} [delete]
+// @Router /api/cameras/delete-{name} [delete]
 // @Summary Удаление камеры из БД
-// @Description При обращении, удаляет камеру из БД по её id
+// @Description При обращении, удаляет камеру из БД по её name
 //
 // @Tags APIs
 // @Produce      application/json
-// @Param	id	path	int	true	"id камеры"
+// @Param	name	path	string	true	"Название камеры"
 //
 // @Success 200 {object} nil "Запрос выполнен успешно"
 // @Failure 400 {object} nil "Ошибка валидации данных"
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
-func (transport *Transport) DeleteApiCamerasDeleteId(w http.ResponseWriter, r *http.Request, id int) {
-	ok, err := transport.srv.RemoveCamera(id)
+func (transport *Transport) DeleteApiCamerasDeleteName(w http.ResponseWriter, r *http.Request, name string) {
+	ok, err := transport.app.repo.RemoveCamera(name)
 	if err != nil {
 		utils.WriteString(w, http.StatusInternalServerError, err, "Пользователя не существует")
 		return
@@ -92,27 +97,28 @@ func (transport *Transport) DeleteApiCamerasDeleteId(w http.ResponseWriter, r *h
 
 // Set godoc
 //
-// @Router /api/cameras/get-{id} [get]
-// @Summary Получение камера по её id
-// @Description При обращении, возвращает камеру по её id
+// @Router /api/cameras/get-{name} [get]
+// @Summary Получение камера по её name
+// @Description При обращении, возвращает камеру по её name
 //
 // @Tags APIs
 // @Produce      application/json
-// @Param	id	path	int	true	"Chat_id пользователя"
+//
+// @Param	name	path	string	true	"Название камеры"
 //
 // @Success 200 {object} camera "Запрос выполнен успешно"
 // @Failure 400 {object} nil "Ошибка валидации данных"
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
-func (transport *Transport) GetApiCamerasGetId(w http.ResponseWriter, r *http.Request, id int) {
-	user, err := transport.srv.GetCameraByID(id)
+func (transport *Transport) GetApiCamerasGetName(w http.ResponseWriter, r *http.Request, name string) {
+	user, err := transport.app.repo.GetCameraByName(name)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			utils.WriteNoContent(w)
 			return
 		}
 
-		utils.WriteString(w, http.StatusNoContent, err, "Не удалось получить пользователя")
+		utils.WriteString(w, http.StatusNoContent, err, "Не удалось получить данные о камере")
 		return
 	}
 
@@ -133,15 +139,155 @@ func (transport *Transport) GetApiCamerasGetId(w http.ResponseWriter, r *http.Re
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) GetApiCamerasGet(w http.ResponseWriter, r *http.Request) {
-	users, err := transport.srv.GetAllCameras()
+	cameras, err := transport.app.repo.GetAllCameras()
 	if err != nil {
-		utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось получить пользователей")
+		utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось получить список камер")
 		return
 	}
-	if len(users) == 0 {
-		utils.WriteString(w, http.StatusInternalServerError, err, "В базе нет пользователей")
+	if len(cameras) == 0 {
+		utils.WriteString(w, http.StatusInternalServerError, err, "В базе нет камер")
 		return
 	}
 
-	utils.WriteObject(w, users)
+	utils.WriteObject(w, cameras)
+}
+
+// Set godoc
+//
+// @Router /api/cameras/record [post]
+// @Summary Запись видео
+// @Description При обращении, записывает видео с камеры, продолжительностью в duration секунд
+//
+// @Tags APIs
+// @Produce      application/json
+//
+// @Param 	request	body	record	true	"Тело запроса"
+//
+// @Success 204 {object} nil "Запрос выполнен успешно"
+// @Failure 400 {object} nil "Ошибка валидации данных"
+// @Failure 401 {object} nil "Ошибка авторизации"
+// @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
+func (transport *Transport) PostApiCamerasRecord(w http.ResponseWriter, r *http.Request) {
+	reqId := uuid.New().String()
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid read body: %s", err), "Не удалось прочитать тело запроса")
+		return
+	}
+
+	go func() {
+		var record models.Record
+		if err := jsoniter.Unmarshal(body, &record); err != nil {
+			utils.WriteString(w, http.StatusBadRequest, fmt.Errorf("Invalid parse body: %s", err), "Не удалось распарсить тело запроса формата JSON")
+			return
+		}
+
+		fileName, err := transport.app.Record(transport.ctx, record, true, reqId)
+		if err != nil {
+			if err := transport.app.ChangeStatus(fileName, nilFileSize, statusFailed); err != nil {
+				utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось добавить запись в очередь")
+				return
+			}
+
+			utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось записать видео")
+			return
+		}
+	}()
+
+	utils.WriteObject(w, models.Uuid{Uuid: reqId})
+}
+
+// Set godoc
+//
+// @Router /api/cameras/capture [post]
+// @Summary Делает скриншот
+// @Description При обращении, делает скришноты с камеры
+//
+// @Tags APIs
+// @Produce      application/json
+//
+// @Param 	request	body	record	true	"Тело запроса"
+//
+// @Success 204 {object} nil "Запрос выполнен успешно"
+// @Failure 400 {object} nil "Ошибка валидации данных"
+// @Failure 401 {object} nil "Ошибка авторизации"
+// @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
+func (transport *Transport) PostApiCamerasCapture(w http.ResponseWriter, r *http.Request) {
+	reqId := uuid.New().String()
+	utils.WriteObject(w, models.Uuid{Uuid: reqId})
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid read body: %s", err), "Не удалось прочитать тело запроса")
+		return
+	}
+
+	go func() {
+		var record models.Record
+		if err := jsoniter.Unmarshal(body, &record); err != nil {
+			utils.WriteString(w, http.StatusBadRequest, fmt.Errorf("Invalid parse body: %s", err), "Не удалось распарсить тело запроса формата JSON")
+			return
+		}
+
+		fileName, err := transport.app.Record(transport.ctx, record, false, reqId)
+		if err != nil {
+			if err := transport.app.ChangeStatus(fileName, nilFileSize, statusFailed); err != nil {
+				utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось добавить запись в очередь")
+				return
+			}
+
+			utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось записать видео")
+			return
+		}
+	}()
+
+	utils.WriteNoContent(w)
+}
+
+// Set godoc
+//
+// @Router /api/cameras/{chat_id}/{file_name}/get [get]
+// @Summary Получение файла
+// @Description При обращении, получает файл с s3
+//
+// @Tags APIs
+// @Produce       application/octet-stream
+//
+// @Param	chat_id	path	int	true	"Chat_id пользователя"
+// @Param	file_name	path	string	true	"Название файла"
+//
+// @Success 200 {file} file "Запрос выполнен успешно"
+// @Failure 400 {object} nil "Ошибка валидации данных"
+// @Failure 401 {object} nil "Ошибка авторизации"
+// @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
+func (transport *Transport) GetApiCamerasChatIdFileNameGet(w http.ResponseWriter, r *http.Request, chatId int, fileName string) {
+	path := fmt.Sprintf("/%d/%s", chatId, fileName)
+	_, err := transport.app.minioClient.StatObject(r.Context(), transport.app.bucketName, path, minio.StatObjectOptions{})
+	if err != nil {
+		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
+			utils.WriteString(w, http.StatusNotFound, fmt.Errorf("File not found: %s", path), "Файл не найден")
+			return
+		}
+		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Error checking object existence: %v", err), "Ошибка проверки существования файла")
+		return
+	}
+
+	object, err := transport.app.minioClient.GetObject(r.Context(), transport.app.bucketName, path, minio.GetObjectOptions{})
+	if err != nil {
+		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid read object: %s", err), "Не удалось получить файл")
+		return
+	}
+	defer object.Close()
+
+	var buffer bytes.Buffer
+	if _, err := buffer.ReadFrom(object); err != nil {
+		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid read object: %s", err), "Не удалось прочитать файл")
+		return
+	}
+
+	if _, err := io.Copy(w, &buffer); err != nil {
+		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid send object: %s", err), "Не удалось прочитать файл")
+		return
+	}
 }

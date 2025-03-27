@@ -1,0 +1,36 @@
+version: 3
+
+tasks:
+  mock-gen:
+    desc: Генерация мок
+    vars:
+      ROOT_DIR: webRTC
+    cmds:
+     - mockgen -source={{.ROOT_DIR}}/internal/service/interface.go -destination={{.ROOT_DIR}}/internal/mocks/mock_service.go -package=mocks
+
+  swagger:
+    desc: Генерация сваггера
+    vars:
+      DOCS: microservices/webRTC/autogen/server
+      ROOT_DIR: microservices/webRTC
+    cmds:
+     - swag init --parseDependency -d {{.ROOT_DIR}},{{.ROOT_DIR}}/internal/service -o {{.DOCS}} -g main.go
+# Подготавливаем данные для подключения в docs.go
+     - cat {{.ROOT_DIR}}/README.md | sed 's/"/\\"/g' > {{.DOCS}}/README.md
+     - awk -F/ '{print "\"" $0 "\\n\"+"}' {{.DOCS}}/README.md > {{.DOCS}}/README.data
+     - sed -i -e '1 s/^/ Description:/;' {{.DOCS}}/README.data
+     - echo "\"\"," >> {{.DOCS}}/README.data
+# Подключаем README.md в docs.go
+     - sed -e '/%README_FILE%/{' -e "r {{.DOCS}}/README.data" -e 'd' -e '}' {{.DOCS}}/docs.go > {{.DOCS}}/tmp.go
+     - mv {{.DOCS}}/tmp.go {{.DOCS}}/docs.go
+     - sed -i -e '/LeftDelim/d' {{.DOCS}}/docs.go
+     - sed -i -e '/RightDelim/d' {{.DOCS}}/docs.go
+     - sed -i -e 's/version:\ \"2\.0\"/version:\ \"3.0\"/g' {{.DOCS}}/swagger.yaml
+     - sed -i -e '/^ *parameters:/,/^[^ ]/{ /^ *type:/ s/type:/schema:\n          type:/; }' {{.DOCS}}/swagger.yaml
+  
+  generate:
+    desc: Генерация сваггера
+    vars:
+      DOCS: microservices/webRTC/autogen/server
+    cmds:
+     - oapi-codegen --config=microservices/webRTC/config/codegen.yml {{.DOCS}}/swagger.yaml
