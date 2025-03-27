@@ -1,7 +1,12 @@
 package models
 
 type Camera struct {
-	Id   int64  `json:"id" validate:"required"`
 	Name string `json:"name" validate:"required"`
-	Mac  string `json:"mac" validate:"required"`
+	Rtsp string `json:"rtsp" validate:"required"`
+}
+
+type Record struct {
+	ChatID     int64  `json:"chat_id"`
+	NameCamera string `json:"name"`
+	Duration   *int   `json:"duration"`
 }

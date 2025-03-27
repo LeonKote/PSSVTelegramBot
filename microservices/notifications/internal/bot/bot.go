@@ -1,11 +1,12 @@
 package bot
 
 import (
-	"log"
+	"fmt"
 
+	"github.com/Impisigmatus/service_core/log"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/api"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/config"
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
-	logrus "github.com/sirupsen/logrus"
 )
 
 type Bot struct {
@@ -15,34 +16,26 @@ type Bot struct {
 	admin      int64
 }
 
-const (
-	toCameras = "redirect_to_cameras"
-	toUsers   = "redirect_to_users"
-	toMain    = "redirect_to_main"
-	toCamera  = "redirect_to_camera"
-	toAdd     = "redirect_to_add"
-)
-
 var LastActions = make(map[int64]int)
 
-func NewBot(token string, admin int64, usersApi, camerasApi string, addrUsers, addrCameras string) (*Bot, error) {
-	botApi, err := tg.NewBotAPI(token)
+func NewBot(cfg config.Config) *Bot {
+	botApi, err := tg.NewBotAPI(cfg.Token)
 	if err != nil {
-		return &Bot{}, err
+		return &Bot{}
 	}
 
-	usersAPI := api.NewUsersApi(addrUsers)
-	camerasAPI := api.NewCameraApi(addrCameras)
+	usersAPI := api.NewUsersApi(cfg)
+	camerasAPI := api.NewCameraApi(cfg)
 	bot := Bot{
 		tgAPI:      botApi,
 		usersAPI:   *usersAPI,
 		camerasAPI: *camerasAPI,
-		admin:      admin,
+		admin:      cfg.AdminId,
 	}
 
-	logrus.Info("Бот успешно запущен.")
+	log.Info("Бот успешно запущен.")
 
-	return &bot, nil
+	return &bot
 }
 
 func (bot *Bot) Run() {
@@ -52,7 +45,7 @@ func (bot *Bot) Run() {
 
 	for update := range updates {
 		if err := bot.handle(update); err != nil {
-			logrus.Errorf("Invalid update: %s", err)
+			log.Errorf("Invalid update: %s", err)
 			continue
 		}
 	}
@@ -60,12 +53,41 @@ func (bot *Bot) Run() {
 
 func (bot *Bot) handle(update tg.Update) error {
 	if update.Message != nil {
-		log.Printf("[%s] %s", update.Message.From.UserName, update.Message.Text)
-		bot.HandleMessage(update.Message)
+		log.Infof("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		if err := bot.HandleMessage(update.Message); err != nil {
+			return fmt.Errorf("Can not handle message: %s", err)
+		}
 	}
 
 	if update.CallbackQuery != nil {
-		bot.HandleCallback(update)
+		if err := bot.HandleCallback(update); err != nil {
+			return fmt.Errorf("Can not handle callback: %s", err)
+		}
+	}
+
+	return nil
+}
+
+func (bot *Bot) EditMessage(chatId int64, messageId int, desc string, buttons *tg.InlineKeyboardMarkup) (tg.Message, error) {
+	msg := tg.NewEditMessageText(chatId, messageId, desc)
+
+	msg.ReplyMarkup = buttons
+
+	newMsg, err := bot.tgAPI.Send(msg)
+	if err != nil {
+		return tg.Message{}, fmt.Errorf("Can not send msg: %s", err)
+	}
+
+	return newMsg, nil
+}
+
+func (bot *Bot) SendMessage(chatId int64, desc string, buttons *tg.InlineKeyboardMarkup) error {
+	msg := tg.NewMessage(chatId, desc)
+
+	msg.ReplyMarkup = buttons
+
+	if _, err := bot.tgAPI.Send(msg); err != nil {
+		return fmt.Errorf("Can not send msg: %s", err)
 	}
 
 	return nil

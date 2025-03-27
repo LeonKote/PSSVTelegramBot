@@ -3,3 +3,7 @@
 .DS_Store
 **/autogen
 **/vendor**
+*/tmp
+.reports
+postgres-data
+minio_data

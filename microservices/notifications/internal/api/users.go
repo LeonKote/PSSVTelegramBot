@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/config"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/models"
 	"github.com/go-resty/resty/v2"
 	jsoniter "github.com/json-iterator/go"
@@ -13,9 +14,10 @@ type UsersAPI struct {
 	client *resty.Client
 }
 
-func NewUsersApi(url string) *UsersAPI {
+func NewUsersApi(cfg config.Config) *UsersAPI {
 	return &UsersAPI{
-		client: resty.New().SetBaseURL(url).SetTimeout(1*time.Minute).SetBasicAuth("dev", "test"),
+		client: resty.New().SetBaseURL(cfg.UsersApi).
+			SetTimeout(1 * time.Minute),
 	}
 }
 
@@ -24,13 +26,12 @@ func (api *UsersAPI) GetAllUsers() ([]models.User, error) {
 
 	resp, err := api.client.R().Get(endpoint)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Can not get all users: %w", err)
 	}
 
-	resp.Body()
 	allUsers := []models.User{}
 	if err := jsoniter.Unmarshal(resp.Body(), &allUsers); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("Can not unmarshal all users: %w", err)
 	}
 
 	return allUsers, nil
@@ -41,12 +42,11 @@ func (api *UsersAPI) AddUser(user models.User) (bool, error) {
 
 	resp, err := api.client.R().SetBody(user).Post(endpoint)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("Can not add user: %w", err)
 	}
 
-	allUsers := []models.User{}
-	if err := jsoniter.Unmarshal(resp.Body(), &allUsers); err != nil {
-		return false, err
+	if resp.StatusCode() != 204 {
+		return false, fmt.Errorf("Invalid status code: %d", resp.StatusCode())
 	}
 
 	return true, nil
@@ -55,14 +55,19 @@ func (api *UsersAPI) AddUser(user models.User) (bool, error) {
 func (api *UsersAPI) GetUserByChatID(chatId int64) (models.User, error) {
 	endpoint := "/users/get-%d"
 
-	resp, err := api.client.R().SetBasicAuth("dev", "test").Get(fmt.Sprintf(endpoint, chatId))
+	a := fmt.Sprintf(endpoint, chatId)
+	resp, err := api.client.R().Get(a)
 	if err != nil {
-		return models.User{}, err
+		return models.User{}, fmt.Errorf("Can not get user by chat id: %w", err)
+	}
+
+	if resp.StatusCode() == 204 {
+		return models.User{}, nil
 	}
 
 	user := models.User{}
 	if err := jsoniter.Unmarshal(resp.Body(), &user); err != nil {
-		return models.User{}, err
+		return models.User{}, fmt.Errorf("Can not unmarshal user by chat id: %w", err)
 	}
 
 	return user, nil
@@ -71,14 +76,14 @@ func (api *UsersAPI) GetUserByChatID(chatId int64) (models.User, error) {
 func (api *UsersAPI) GetAdmin() (models.User, error) {
 	const endpoint = "/users/getAdmin"
 
-	resp, err := api.client.R().SetBasicAuth("dev", "test").Get(endpoint)
+	resp, err := api.client.R().Get(endpoint)
 	if err != nil {
-		return models.User{}, err
+		return models.User{}, fmt.Errorf("Can not get admin: %w", err)
 	}
 
 	user := models.User{}
 	if err := jsoniter.Unmarshal(resp.Body(), &user); err != nil {
-		return models.User{}, err
+		return models.User{}, fmt.Errorf("Can not unmarshal admin: %w", err)
 	}
 
 	return user, nil
@@ -87,10 +92,14 @@ func (api *UsersAPI) GetAdmin() (models.User, error) {
 func (api *UsersAPI) UpdateUser(updatedUser models.User) (bool, error) {
 	const endpoint = "/users/update"
 
-	resp, err := api.client.R().SetBody(updatedUser).SetBasicAuth("dev", "test").Put(endpoint)
+	resp, err := api.client.R().SetBody(updatedUser).Put(endpoint)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("Can not update user: %w", err)
 	}
 
-	return resp.StatusCode() == 204, nil
+	if resp.StatusCode() != 204 {
+		return false, fmt.Errorf("Invalid status code: %d", resp.StatusCode())
+	}
+
+	return true, nil
 }

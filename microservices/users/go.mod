@@ -1,6 +1,6 @@
 module github.com/LeonKote/PSSVTelegramBot/microservices/users
 
-go 1.23.0
+go 1.24.1
 
 require (
 	github.com/Impisigmatus/service_core v0.0.0-20240625175248-85601fa8d3dc
@@ -8,7 +8,6 @@ require (
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/json-iterator/go v1.1.12
 	github.com/oapi-codegen/runtime v1.1.1
-	github.com/sirupsen/logrus v1.9.3
 	github.com/swaggo/http-swagger v1.3.4
 	github.com/swaggo/swag v1.16.4
 )

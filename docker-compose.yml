@@ -1,0 +1,142 @@
+version: "3"
+services:
+  database:
+    image: postgres:alpine
+    command: ["postgres", "-c", "log_statement=all", "-c", "log_destination=stderr"]
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DATABASE}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_SSLMODE: disable
+      POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+      - ./migration/000001_init.up.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DATABASE}"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 80s
+    networks:
+      - camnet
+
+  minio:
+    image: docker.io/bitnami/minio:2022
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_DEFAULT_BUCKETS=${BUCKET_NAME}
+    volumes:
+      - './minio_data:/data'
+    networks:
+      - camnet
+    ports:
+      - "9001:9001"
+
+  cameras:
+    build: microservices/cameras/
+    container_name: api_Cameras
+    restart: always
+    environment:
+      - ADDRESS=:8080
+      - APIS_AUTH_BASIC=${APIS_AUTH_BASIC}
+      - POSTGRES_HOSTNAME=database
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - ENDPOINT=${ENDPOINT}
+      - ACCESS_KEY_ID=${ACCESS_KEY_ID}
+      - SECRET_ACCESS_KEY=${SECRET_ACCESS_KEY}
+      - BUCKET_NAME=${BUCKET_NAME}
+      - FILES_API=${FILES_API}
+      - STREAM_URL=http://rtsp_multi:8083/stream
+    depends_on:
+      - database
+    networks:
+      - camnet
+
+
+  files:
+    build: microservices/files/
+    container_name: api_Files
+    restart: always
+    environment:
+      - ADDRESS=:8081
+      - APIS_AUTH_BASIC=${APIS_AUTH_BASIC}
+      - POSTGRES_HOSTNAME=${POSTGRES_HOSTNAME}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - NOTIFY_API=${NOTIFY_API}
+    depends_on:
+      - database
+    networks:
+      - camnet
+
+  notify:
+    build: microservices/notifications/
+    container_name: api_Notify
+    restart: always
+    environment:
+      - ADDRESS=:8082
+      - APIS_AUTH_BASIC=${APIS_AUTH_BASIC}
+      - TOKEN=${TOKEN}
+      - ADMIN_CHAT_ID=${ADMIN_CHAT_ID}
+      - FILES_API=${FILES_API}
+      - USERS_API=${USERS_API}
+      - CAMERAS_API=${CAMERAS_API}
+    depends_on:
+      - database
+      - cameras
+      - files
+      - users
+    networks:
+      - camnet
+
+  rtsp_multi:
+    build: microservices/rtsp_multi/
+    container_name: api_RtspMulti
+    restart: always
+    environment:
+      - ADDRESS=:8083
+      - APIS_AUTH_BASIC=${APIS_AUTH_BASIC}
+      - CAMERAS_API=http://cameras:8080/api
+    depends_on:
+      - database
+      - cameras
+    networks:
+      - camnet
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  users:
+    build: microservices/users/
+    container_name: api_Users
+    restart: always
+    environment:
+      - ADDRESS=:8084
+      - APIS_AUTH_BASIC=${APIS_AUTH_BASIC}
+      - POSTGRES_HOSTNAME=${POSTGRES_HOSTNAME}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DATABASE=${POSTGRES_DATABASE}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    depends_on:
+      - database
+    networks:
+      - camnet
+
+  # live555-proxy-server:
+  #   image: paradisi/live555-proxy-server
+  #   container_name: live555-proxy-server
+  #   network_mode: host
+  #   command: -v rtsp://192.168.0.104:554/ucast/11
+  #   restart: unless-stopped
+
+networks:
+  camnet:
+    driver: bridge

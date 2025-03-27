@@ -1,0 +1,299 @@
+linters:
+  # Enable available linters.
+  enable:
+    - cyclop
+    - dupl
+    - funlen
+    - gocognit
+    - gocyclo
+    - lll
+    - maintidx
+    - nolintlint
+    - varnamelen
+    - wrapcheck
+    - govet
+    - gochecknoglobals
+    - goconst
+    - unused
+
+  # Disable the following linters.
+  disable:
+    # The 'tenv' linter was deprecated (since v1.64.0) because it duplicates functionality
+    # provided by the 'usetesting' linter. Use 'usetesting' instead for similar checks.
+    - tenv
+
+    # Checks for a new line before return and branch statements to increase code clarity.
+    # https://github.com/ssgreg/nlreturn.
+    # Методы и функции должны быть маленькими и компактными.
+    # Если ваш кусок кода нуждается в разбиении на логические куски пустыми строками,
+    # разбейте этот код на несколько более мелких понятных функций.
+    # https://www.yegor256.com/2014/11/03/empty-line-code-smell.html.
+    - nlreturn
+
+    # WSL is a linter that enforces a very non-scientific vision of how to make code
+    # more readable by enforcing empty lines at the right places.
+    # https://github.com/bombsimon/wsl.
+    # Методы и функции должны быть маленькими и компактными.
+    # Если ваш кусок кода нуждается в разбиении на логические куски пустыми строками,
+    # разбейте этот код на несколько более мелких понятных функций.
+    # https://www.yegor256.com/2014/11/03/empty-line-code-smell.html.
+    - wsl
+
+    # Checks if all structure fields are initialized.
+    # https://github.com/GaijinEntertainment/go-exhaustruct.
+    # Довольно много случаев, когда пустые поля структур не являются обязательными.
+    # Особенно полезно отключать в тестах.
+    - exhaustruct
+
+    # Checks the struct tags.
+    # https://github.com/ldez/tagliatelle.
+    # Львиная доля срабатываний приходится на описание json-тегов в структурах,
+    # которые описывают внешние модели данных.
+    - tagliatelle
+
+    # Check declaration order and count of types, constants, variables and functions.
+    # https://gitlab.com/bosi/decorder.
+    # Сочли неудобным.
+    - decorder
+
+    # Accept Interfaces, Return Concrete Types.
+    # https://github.com/butuzov/ireturn.
+    # Не всегда возможно и нужно возвращать конкретный тип.
+    # Соглашение следующее.
+    # Если название метода начинается со слова resolve, то возвращаем интерфейс.
+    # Если название метода начинается со слов New или Make, то возвращаем конкретный тип.
+    - ireturn
+
+    # Checks package imports are in a list of acceptable packages.
+    # https://github.com/OpenPeeDeeP/depguard.
+    # Пока не накопили базу знаний.
+    - depguard
+
+linters-settings:
+  cyclop:
+    # The maximal code complexity to report.
+    # Default: 10.
+    max-complexity: 5
+    # The maximal average package complexity.
+    # If it's higher than 0.0 (float) the check is enabled.
+    # Default: 0.0.
+    package-average: 5.2
+    # Should ignore tests.
+    # Default: false.
+    skip-tests: false
+
+  dupl:
+    # Tokens count to trigger issue.
+    # Default: 150.
+    threshold: 100
+
+  funlen:
+    # Checks the number of lines in a function.
+    # If lower than 0, disable the check.
+    # Default: 60.
+    lines: 30
+    # Checks the number of statements in a function.
+    # If lower than 0, disable the check.
+    # Default: 40.
+    statements: 20
+
+  gocognit:
+    # Minimal code complexity to report.
+    # Default: 30 (but we recommend 10-20).
+    min-complexity: 10
+
+  gocyclo:
+    # Minimal code complexity to report.
+    # Default: 30 (but we recommend 10-20).
+    min-complexity: 10
+
+  lll:
+    # Max line length, lines longer will be reported.
+    # Default: 120.
+    line-length: 120
+    # Tab width in spaces.
+    # Default: 1.
+    tab-width: 4
+
+  maintidx:
+    # Show functions with maintainability index lower than N.
+    # A high index indicates better maintainability (it's kind of the opposite of complexity).
+    # Default: 20.
+    under: 20
+
+  nolintlint:
+    # Disable to ensure that all nolint directives actually have an effect.
+    # Default: false.
+    allow-unused: false
+    # Exclude following linters from requiring an explanation.
+    # Default: [].
+    allow-no-explanation: []
+    # Enable to require an explanation of nonzero length after each nolint directive.
+    # Default: false.
+    require-explanation: true
+    # Enable to require nolint directives to mention the specific linter being suppressed.
+    # Default: false.
+    require-specific: true
+
+  varnamelen:
+    # The longest distance, in source lines, that is being considered a "small scope".
+    # Variables used in at most this many lines will be ignored.
+    # Default: 5.
+    max-distance: 5
+    # The minimum length of a variable's name that is considered "long".
+    # Variable names that are at least this long will be ignored.
+    # Default: 3.
+    min-name-length: 2
+    # Check method receivers.
+    # Default: false.
+    check-receiver: false
+    # Check named return values.
+    # Default: false.
+    check-return: true
+    # Check type parameters.
+    # Default: false.
+    check-type-param: true
+    # Ignore "ok" variables that hold the bool return value of a type assertion.
+    # Default: false.
+    ignore-type-assert-ok: false
+    # Ignore "ok" variables that hold the bool return value of a map index.
+    # Default: false.
+    ignore-map-index-ok: false
+    # Ignore "ok" variables that hold the bool return value of a channel receive.
+    # Default: false.
+    ignore-chan-recv-ok: false
+    # Optional list of variable names that should be ignored completely.
+    # Default: [].
+    ignore-names: [
+      # Request.
+      r,
+      # Generic type.
+      T,
+    ]
+    # Optional list of variable declarations that should be ignored completely.
+    # Default: [].
+    ignore-decls:
+      - t testing.T
+
+  wrapcheck:
+    # An array of strings that specify substrings of signatures to ignore.
+    # If this set, it will override the default set of ignored signatures.
+    # See https://github.com/tomarrell/wrapcheck#configuration for more information.
+    ignoreSigs:
+    - .Errorf(
+    - errors.New(
+    - errors.Unwrap(
+    - .Wrap(
+    - .Wrapf(
+    - .WithMessage(
+    - .WithMessagef(
+    - .WithStack(
+    - (github.com/labstack/echo/v4.Context).
+    # An array of strings that specify regular expressions of signatures to ignore.
+    # Default: []
+    ignoreSigRegexps: []
+    # An array of strings that specify globs
+    # of packages to ignore.
+    # Default: []
+    ignorePackageGlobs: []
+    # An array of strings that specify regular expressions of interfaces to ignore.
+    # Default: []
+    ignoreInterfaceRegexps: []
+
+  govet:
+    # Enable or disable specific vet checks.
+    checks:
+      # Check for errors unhandled by the code.
+      # Default: false.
+      errors-as-outputs: true
+      # Check for errors passed as arguments.
+      # Default: false.
+      errors-as-arguments: true
+      # Check for errors returned from deferred functions.
+      # Default: false.
+      errors-in-defers: true
+      # Check for missing context deadlines.
+      # Default: false.
+      missing-context-deadline: true
+      # Check for nil slices, maps, and channels.
+      # Default: false.
+      nilness: true
+      # Check for shadowed variables.
+      # Default: false.
+      shadows: true
+      # Check for struct tags with invalid syntax.
+      # Default: false.
+      struct-tags: true
+      # Check for unsafe pointer usage.
+      # Default: false.
+      unsafe-pointers: true
+      # Check for unused result of calls to certain functions.
+      # Default: false.
+      unused-results: true
+    # Set the severity level for violations.
+    # Possible values: "error", "warning", "info".
+    # Default: "error".
+    severity: error
+
+  gochecknoglobals:
+    # Check only global variables and ignore locals.
+    # Default: false (checks both globals and locals).
+    check-global-only: true
+    # Set the severity level for violations.
+    # Possible values: "error", "warning", "info".
+    # Default: "error".
+    severity: warning
+
+  goconst:
+    # Minimum number of repeated strings required to suggest a constant.
+    # Default: 2.
+    min-count: 1
+    # Minimum length of string literals to consider for constantization.
+    # Default: 3.
+    min-len: 3
+    # Check for constants in string literals.
+    # Default: false.
+    strings: true
+    # Check for constants in boolean literals.
+    # Default: false.
+    bools: true
+    # Check for constants in numeric literals.
+    # Default: false.
+    numbers: true
+
+  unused:
+    # Configuration for checking unused items.
+    check:
+      # Check for unused variables.
+      # Default: false.
+      variables: true
+      # Check for unused functions.
+      # Default: false.
+      functions: true
+      # Check for unused constants.
+      # Default: false.
+      constants: true
+      # Check for unused types.
+      # Default: false.
+      types: true
+      # Check for unused struct fields.
+      # Default: false.
+      fields: true
+      # Check for unused function parameters.
+      # Default: false.
+      params: true
+      # Check for unused function results.
+      # Default: false.
+      results: true
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        # В объемных тестах довольно сложно решить проблему "дублирования",
+        # поскольку приходится добавлять слишком много сахара,
+        # что не придает гибкости и понятности.
+        - dupl
+        - funlen
+        # В тестах допустимо иметь *статичные* глобальные переменные.
+        - gochecknoglobals

@@ -9,19 +9,18 @@ import (
 
 	"github.com/Impisigmatus/service_core/utils"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/users/autogen/server"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/users/internal/database"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/users/internal/models"
-	"github.com/jmoiron/sqlx"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/users/internal/repository"
 	jsoniter "github.com/json-iterator/go"
 )
 
 type Transport struct {
-	db database.Database
+	repo repository.IUsersRepository
 }
 
-func NewTransport(db *sqlx.DB) server.ServerInterface {
+func NewTransport(repo repository.IUsersRepository) server.ServerInterface {
 	return &Transport{
-		db: *database.NewDatabase(db),
+		repo: repo,
 	}
 }
 
@@ -53,7 +52,7 @@ func (transport *Transport) PostApiUsersAdd(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := transport.db.AddUser(user); err != nil {
+	if err := transport.repo.AddUser(user); err != nil {
 		utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось добавить пользователя")
 		return
 	}
@@ -76,7 +75,7 @@ func (transport *Transport) PostApiUsersAdd(w http.ResponseWriter, r *http.Reque
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) DeleteApiUsersDeleteChatId(w http.ResponseWriter, r *http.Request, chatId int) {
-	ok, err := transport.db.RemoveUser(int64(chatId))
+	ok, err := transport.repo.RemoveUser(int64(chatId))
 	if err != nil {
 		utils.WriteString(w, http.StatusInternalServerError, err, "Пользователя не существует")
 		return
@@ -106,7 +105,7 @@ func (transport *Transport) DeleteApiUsersDeleteChatId(w http.ResponseWriter, r 
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) GetApiUsersGetChatId(w http.ResponseWriter, r *http.Request, chatId int) {
-	user, err := transport.db.GetUserByChatID(int64(chatId))
+	user, err := transport.repo.GetUserByChatID(int64(chatId))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			utils.WriteNoContent(w)
@@ -134,7 +133,7 @@ func (transport *Transport) GetApiUsersGetChatId(w http.ResponseWriter, r *http.
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) GetApiUsersGet(w http.ResponseWriter, r *http.Request) {
-	users, err := transport.db.GetAllUsers()
+	users, err := transport.repo.GetAllUsers()
 	if err != nil {
 		utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось получить пользователей")
 		return
@@ -161,7 +160,7 @@ func (transport *Transport) GetApiUsersGet(w http.ResponseWriter, r *http.Reques
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) GetApiUsersGetAdmin(w http.ResponseWriter, r *http.Request) {
-	users, err := transport.db.GetAdminUser()
+	users, err := transport.repo.GetAdminUser()
 	if err != nil {
 		if users == (models.User{}) {
 			utils.WriteString(w, http.StatusOK, nil, "Пользователя не существует")
@@ -203,7 +202,7 @@ func (transport *Transport) PutApiUsersUpdate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	ok, err := transport.db.UpdateUser(updateUser)
+	ok, err := transport.repo.UpdateUser(updateUser)
 	if err != nil {
 		utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось обновить данные пользователя")
 		return
