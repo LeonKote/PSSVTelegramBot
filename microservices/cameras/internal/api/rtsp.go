@@ -73,13 +73,15 @@ func (cam *Camera) CapturePhoto(sourceStreamURL string) (io.ReadCloser, error) {
 	log.Debugf("Start capture photo at: %s", time.Now())
 	var buffer bytes.Buffer
 	log.Debugf("Url: %s, frame: %d, quality: %d, format: %s", sourceStreamURL, frame, quality, fImg)
-	err := ffmpeg.Input(sourceStreamURL).
-		Output("pipe:",
+	err := ffmpeg.Input(sourceStreamURL, ffmpeg.KwArgs{
+		"fflags": "+genpts", // добавим безопасный флаг
+		"f":      "mjpeg",   // явно указываем, что читаем MJPEG
+	}).
+		Output("pipe:1",
 			ffmpeg.KwArgs{
-				"ss":       "3",
-				"frames:v": "1",      // только один кадр
-				"f":        "image2", // формат одиночного изображения
-				"q:v":      "1",      // качество JPEG (1 — max, 31 — min)
+				"f":        "image2", // формат — один файл (image2)
+				"c:v":      "mjpeg",
+				"frames:v": "1",
 			}).
 		WithOutput(&buffer).
 		WithErrorOutput(os.Stderr).
@@ -107,6 +109,7 @@ func (cam *Camera) encodeVideo(inputBuf *bytes.Buffer, duration int) (io.ReadClo
 	err = ffmpeg.
 		Input("pipe:0", ffmpeg.KwArgs{
 			"t": fmt.Sprintf("%d", duration),
+			"f": "mjpeg",
 		}).
 		Output(fileName,
 			ffmpeg.KwArgs{

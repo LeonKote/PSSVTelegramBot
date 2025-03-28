@@ -62,9 +62,9 @@ test-cover: mock-gen # Запуск покрытия тестами
 	@echo "Coverage report generated in $(TEST)/coverage.html"
 	@echo "\033[0;32mOK\033[0m"
 
-swagger: swagger-code-gen ## Генерация сваггера
+swagger: swagger-spec-gen swagger-code-gen ## Генерация сваггера
 
-swagger-code-gen: swagger-spec-gen
+swagger-code-gen: setup
 	@echo -n "\033[1;34mCodegen...\033[0m\t"
 	@oapi-codegen --config=scripts/codegen.yml $(DOCS)/swagger.yaml
 	@echo "\033[0;32mOK\033[0m"
