@@ -60,10 +60,8 @@ func (app *Application) Run(ctx context.Context) error {
 		"rtsp_transport": "tcp",
 	}).
 		Output("pipe:", ffmpeg.KwArgs{
-			"f":        "mpegts",
-			"q:v":      "2",
-			"c":        "copy",
-			"movflags": "+frag_keyframe+empty_moov+default_base_moof",
+			"f":   "mjpeg",
+			"q:v": "30",
 		}).
 		WithErrorOutput(stderr).
 		WithOutput(app.writer)
