@@ -60,3 +60,27 @@ func (transport *Transport) PostApiNotify(w http.ResponseWriter, r *http.Request
 
 	utils.WriteNoContent(w)
 }
+
+// Set godoc
+//
+// @Router /api/notify/alert/{file_name} [post]
+// @Summary Отправка оповещения при alert'ах
+// @Description При обращении, отправляет оповещение при alert'ах
+//
+// @Tags APIs
+// @Accept       application/json
+//
+// @Param	file_name	path	string	true	"Название файла"
+//
+// @Success 204 {object} nil "Запрос выполнен успешно"
+// @Failure 401 {object} nil "Ошибка авторизации"
+// @Failure 404 {object} nil "Ошибка получения данных"
+// @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
+func (transport *Transport) PostApiNotifyAlertFileName(w http.ResponseWriter, r *http.Request, fileName string) {
+	if err := transport.bot.NotifyAlert(fileName); err != nil {
+		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid notify: %s", err), "Не удалось отправить оповещения")
+		return
+	}
+
+	utils.WriteNoContent(w)
+}

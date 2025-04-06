@@ -30,7 +30,7 @@ type Config struct {
 }
 
 const (
-	useSSL = false
+	useSSL = true
 
 	address = "ADDRESS"
 	auth    = "APIS_AUTH_BASIC"

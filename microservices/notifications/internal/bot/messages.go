@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Impisigmatus/service_core/log"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/models"
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -139,6 +140,37 @@ func (bot *Bot) NotifyReady(notify models.Notify) error {
 			return fmt.Errorf("Invalid send file: %w", err)
 		}
 
+	}
+
+	return nil
+}
+
+func (bot *Bot) NotifyAlert(fileName string) error {
+	data, err := bot.camerasAPI.GetFile("alert", fileName)
+	if err != nil {
+		return fmt.Errorf("Invalid get file: %w", err)
+	}
+
+	filePath := fmt.Sprintf("alert/%s.png", fileName)
+
+	users, err := bot.usersAPI.GetAllUsers()
+	if err != nil {
+		return fmt.Errorf("Invalid get all users: %w", err)
+	}
+
+	for _, user := range users {
+		reader := bytes.NewReader(data)
+
+		doc := tg.FileReader{
+			Name:   filePath,
+			Reader: reader,
+		}
+
+		msg := tg.NewPhoto(user.Chat_ID, doc)
+		_, err = bot.tgAPI.Send(msg)
+		if err != nil {
+			log.Errorf("Invalid send file: %s to user %d", err, user.Chat_ID)
+		}
 	}
 
 	return nil

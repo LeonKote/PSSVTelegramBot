@@ -247,23 +247,23 @@ func (transport *Transport) PostApiCamerasCapture(w http.ResponseWriter, r *http
 
 // Set godoc
 //
-// @Router /api/cameras/{chat_id}/{file_name}/get [get]
+// @Router /api/cameras/{dir}/{file_name}/get [get]
 // @Summary Получение файла
 // @Description При обращении, получает файл с s3
 //
 // @Tags APIs
 // @Produce       application/octet-stream
 //
-// @Param	chat_id	path	int	true	"Chat_id пользователя"
+// @Param	dir	path	string	true	"Название директории"
 // @Param	file_name	path	string	true	"Название файла"
 //
 // @Success 200 {file} file "Запрос выполнен успешно"
 // @Failure 400 {object} nil "Ошибка валидации данных"
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
-func (transport *Transport) GetApiCamerasChatIdFileNameGet(w http.ResponseWriter, r *http.Request, chatId int, fileName string) {
-	path := fmt.Sprintf("/%d/%s", chatId, fileName)
-	_, err := transport.app.minioClient.StatObject(r.Context(), transport.app.bucketName, path, minio.StatObjectOptions{})
+func (transport *Transport) GetApiCamerasDirFileNameGet(w http.ResponseWriter, r *http.Request, dir string, fileName string) {
+	path := fmt.Sprintf("/%s/%s", dir, fileName)
+	_, err := transport.app.minioClient.StatObject(transport.ctx, transport.app.bucketName, path, minio.StatObjectOptions{})
 	if err != nil {
 		if minio.ToErrorResponse(err).Code == "NoSuchKey" {
 			utils.WriteString(w, http.StatusNotFound, fmt.Errorf("File not found: %s", path), "Файл не найден")
@@ -273,7 +273,7 @@ func (transport *Transport) GetApiCamerasChatIdFileNameGet(w http.ResponseWriter
 		return
 	}
 
-	object, err := transport.app.minioClient.GetObject(r.Context(), transport.app.bucketName, path, minio.GetObjectOptions{})
+	object, err := transport.app.minioClient.GetObject(transport.ctx, transport.app.bucketName, path, minio.GetObjectOptions{})
 	if err != nil {
 		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid read object: %s", err), "Не удалось получить файл")
 		return

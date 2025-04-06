@@ -2,56 +2,55 @@ package api
 
 import (
 	"bytes"
-	"context"
-	"errors"
-	"io"
-	"net/http"
-	"strings"
+	"fmt"
+	"os"
+	"time"
 
 	"github.com/Impisigmatus/service_core/log"
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
 type Camera struct {
-	stream *ffmpeg.Stream
+	rtspUrl string
 }
 
 func NewCamera(rtspURL string) *Camera {
+	_, err := ffmpeg.ProbeWithTimeout(rtspURL, 10*time.Second, ffmpeg.KwArgs{
+		"fflags":         "+genpts",
+		"rtsp_transport": "tcp",
+	})
+	if err != nil {
+		log.Errorf("Failed to probe RTSP stream: %v", err)
+		return nil
+	}
+
 	return &Camera{
-		stream: ffmpeg.Input(rtspURL),
+		rtspUrl: rtspURL,
 	}
 }
 
-// chat_id
-// file(photo/video)
-
-func (cam *Camera) RecordVideo(ctx context.Context, duration int, sourceStreamURL string) (io.ReadCloser, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceStreamURL, nil)
-	if err != nil {
-		log.Errorf("Error creating request: %s", err)
-		return nil, err
-	}
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Errorf("Error connecting to camera: %s", err)
-		return nil, err
-	}
-	defer resp.Body.Close()
-
+func (cam *Camera) CapturePhoto() ([]byte, error) {
+	begin := time.Now()
+	log.Debugf("Start capture photo at: %s", begin)
 	var buffer bytes.Buffer
-
-	// Просто копируем тело до закрытия контекста
-	_, err = io.Copy(&buffer, resp.Body)
+	err := ffmpeg.Input(cam.rtspUrl, ffmpeg.KwArgs{
+		"fflags":   "+genpts",
+		"loglevel": "error",
+	}).
+		Output("pipe:1",
+			ffmpeg.KwArgs{
+				"f":        "mjpeg",
+				"frames:v": "1",
+				"q:v":      "2",
+			}).
+		WithOutput(&buffer).
+		WithErrorOutput(os.Stderr).
+		Run()
 	if err != nil {
-		// Игнорируем таймаут как нормальное завершение
-		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "context deadline exceeded") {
-			log.Info("Видео обрезано по времени — без ошибок.")
-		} else {
-			log.Errorf("Ошибка при копировании: %s", err)
-			return nil, err
-		}
+		return nil, fmt.Errorf("Failed to encode photo: %w", err)
 	}
 
-	return io.NopCloser(&buffer), nil
+	log.Infof("End capture photo. Duration: %s, len: %d", time.Since(begin), buffer.Len())
+
+	return buffer.Bytes(), nil
 }

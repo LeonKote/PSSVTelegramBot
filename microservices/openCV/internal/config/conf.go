@@ -15,10 +15,12 @@ type Config struct {
 	FilesHost       string
 
 	StreamUrl string
+
+	NotificationsApi string
 }
 
 const (
-	useSSL = false
+	useSSL = true
 
 	address = "ADDRESS"
 
@@ -26,10 +28,10 @@ const (
 	accessKeyID     = "ACCESS_KEY_ID"
 	secretAccessKey = "SECRET_ACCESS_KEY"
 	bucketName      = "BUCKET_NAME"
-	rtsp            = "RTSP"
-	filesApi        = "FILES_API"
 
 	streamUrl = "STREAM_URL"
+
+	notificationsApi = "NOTIFICATIONS_API"
 )
 
 func MakeConfig() Config {
@@ -41,8 +43,8 @@ func MakeConfig() Config {
 		SecretAccessKey: os.Getenv(secretAccessKey),
 		UseSSL:          useSSL,
 		BucketName:      os.Getenv(bucketName),
-		FilesHost:       os.Getenv(filesApi),
 
-		StreamUrl: os.Getenv(streamUrl),
+		StreamUrl:        os.Getenv(streamUrl),
+		NotificationsApi: os.Getenv(notificationsApi),
 	}
 }

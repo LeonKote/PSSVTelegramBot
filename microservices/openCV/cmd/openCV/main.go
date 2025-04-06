@@ -9,14 +9,10 @@ import (
 	"syscall"
 
 	"github.com/Impisigmatus/service_core/log"
-	"github.com/Impisigmatus/service_core/middlewares"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/autogen/server"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/internal/config"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/internal/service"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/app"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/config"
 	"github.com/go-chi/chi/v5"
 	httpSwagger "github.com/swaggo/http-swagger"
-
-	_ "github.com/LeonKote/PSSVTelegramBot/microservices/cameras/autogen/docs"
 )
 
 // @title Cameras API
@@ -29,9 +25,10 @@ func main() {
 	log.Init(log.LevelDebug)
 	cfg := config.MakeConfig()
 
-	app := service.MakeApplication(ctx, repo, cfg)
+	app := app.MakeApplication(cfg)
+	go app.CheckPhoto(ctx)
 
-	router := getRouter(ctx, app, cfg)
+	router := getRouter(ctx, cfg)
 	server := &http.Server{
 		Addr:    cfg.Address,
 		Handler: router,
@@ -60,9 +57,7 @@ func main() {
 	}
 }
 
-func getRouter(ctx context.Context, app *service.Application, cfg config.Config) *chi.Mux {
-	transport := service.NewTransport(ctx, app)
-
+func getRouter(ctx context.Context, cfg config.Config) *chi.Mux {
 	router := chi.NewRouter()
 	router.Get("/swagger/*", httpSwagger.WrapHandler)
 
@@ -72,15 +67,15 @@ func getRouter(ctx context.Context, app *service.Application, cfg config.Config)
 	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
-	router.Handle("/api/*",
-		middlewares.Use(
-			// middlewares.Use(
-			server.Handler(transport),
-			//middlewares.Authorization([]string{cfg.BasicLogin, cfg.BasicPass}),
-			//),
-			middlewares.Logger(),
-		),
-	)
+	// router.Handle("/api/*",
+	// 	middlewares.Use(
+	// 		// middlewares.Use(
+	// 		//server.Handler(transport),
+	// 		//middlewares.Authorization([]string{cfg.BasicLogin, cfg.BasicPass}),
+	// 		//),
+	// 		middlewares.Logger(),
+	// 	),
+	// )
 
 	return router
 }
