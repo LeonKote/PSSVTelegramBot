@@ -11,7 +11,6 @@ import (
 	"github.com/Impisigmatus/service_core/log"
 	"github.com/Impisigmatus/service_core/middlewares"
 	"github.com/Impisigmatus/service_core/postgres"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/users/autogen/server"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/users/internal/config"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/users/internal/repository"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/users/internal/service"
@@ -20,6 +19,7 @@ import (
 	httpSwagger "github.com/swaggo/http-swagger"
 
 	_ "github.com/LeonKote/PSSVTelegramBot/microservices/users/autogen/docs"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/users/autogen/server"
 )
 
 // @title Users API
@@ -28,13 +28,15 @@ import (
 // @host localhost:8000
 // @BasePath /api
 func main() {
-	cfg := config.MakeConfig()
-	log.Init(log.LevelDebug)
+	logger := log.New(log.LevelDebug)
+	cfg := config.MakeConfig(logger)
 
 	repo := repository.NewUsersRepository(
 		sqlx.NewDb(
 			postgres.NewPostgres(
 				postgres.Config{
+					Logger: logger,
+
 					Hostname: cfg.PgHost,
 					Port:     cfg.PgPort,
 					Database: cfg.PgDB,
@@ -53,11 +55,11 @@ func main() {
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Panicf("Invalid service starting: %s", err)
+			logger.Panic().Msgf("Invalid service starting: %s", err)
 		}
-		log.Info("Service stopped")
+		logger.Info().Msg("Service stopped")
 	}()
-	log.Info("Service started")
+	logger.Info().Msg("Service started")
 
 	channel := make(chan os.Signal, 1)
 	signal.Notify(channel,
@@ -70,7 +72,7 @@ func main() {
 	<-channel
 
 	if err := server.Shutdown(context.Background()); err != nil {
-		log.Panicf("Invalid service stopping: %s", err)
+		logger.Panic().Msgf("Invalid service stopping: %s", err)
 	}
 }
 
@@ -88,11 +90,13 @@ func getRouter(repo repository.IUsersRepository, cfg config.Config) *chi.Mux {
 
 	router.Handle("/api/*",
 		middlewares.Use(
-			// middlewares.Use(
-			server.Handler(transport),
-			//middlewares.Authorization([]string{cfg.BasicLogin, cfg.BasicPass}),
-			//),
-			middlewares.Logger(),
+			middlewares.Use(
+				middlewares.Use(
+					server.Handler(transport),
+					middlewares.Authorization([]string{cfg.BasicAuth}),
+				),
+				middlewares.ContextLogger()),
+			middlewares.RequestID(cfg.Logger),
 		),
 	)
 

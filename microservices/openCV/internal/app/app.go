@@ -9,11 +9,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/Impisigmatus/service_core/log"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/api"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/config"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/rs/zerolog"
 	"gocv.io/x/gocv"
 )
 
@@ -24,38 +24,38 @@ type Application struct {
 	notifyApi   *api.NotifyAPI
 }
 
-func MakeApplication(cfg config.Config) *Application {
+func MakeApplication(log zerolog.Logger, streamUrl string, cfg config.Config) *Application {
 	minioClient, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
 		Secure: cfg.UseSSL,
 	})
 	if err != nil {
-		log.Panicf("Invalid connect to minio: %s", err)
+		log.Panic().Msgf("Invalid connect to minio: %s", err)
 	}
 
 	return &Application{
-		camera:      api.NewCamera(cfg.StreamUrl),
+		camera:      api.NewCamera(cfg.Logger, streamUrl, cfg.AuthForFfmpeg),
 		cfg:         cfg,
 		minioClient: minioClient,
-		notifyApi:   api.NewNotifyAPI(cfg.NotificationsApi),
+		notifyApi:   api.NewNotifyAPI(cfg),
 	}
 }
 
-func (app *Application) CheckPhoto(ctx context.Context) {
+func (app *Application) CheckPhoto(log zerolog.Logger, ctx context.Context) {
 	prevFrame := gocv.NewMat()
 
 	for {
-		newFrame, err := app.processing(ctx, prevFrame)
+		newFrame, err := app.processing(log, ctx, prevFrame)
 		if err != nil {
-			log.Errorf("Failed to process photo: %s", err)
+			log.Error().Msgf("Failed to process photo: %s", err)
 		}
 
 		prevFrame = newFrame
 	}
 }
 
-func (app *Application) processing(ctx context.Context, prevFrame gocv.Mat) (gocv.Mat, error) {
-	data, err := app.camera.CapturePhoto()
+func (app *Application) processing(log zerolog.Logger, ctx context.Context, prevFrame gocv.Mat) (gocv.Mat, error) {
+	data, err := app.camera.CapturePhoto(log, app.cfg.AuthForFfmpeg)
 	if data == nil {
 		return gocv.Mat{}, fmt.Errorf("Failed to capture photo: %w", err)
 	}
@@ -89,12 +89,14 @@ func (app *Application) processing(ctx context.Context, prevFrame gocv.Mat) (goc
 
 	// Считаем количество отличий
 	nonZero := gocv.CountNonZero(diff)
-	log.Infof("Count non zero: %d", nonZero)
+	log.Info().Msgf("Count non zero: %d", nonZero)
 
 	// Настраиваем порог чувствительности (увеличен для меньшей чувствительности)
 	if nonZero > 800000 {
 		filePath := fmt.Sprintf("alert/%d.png", time.Now().Unix())
-		ok, err := app.AttemptLoad(data,
+		ok, err := app.AttemptLoad(
+			log,
+			data,
 			filePath,
 			len(data),
 			ctx,
@@ -113,7 +115,7 @@ func (app *Application) processing(ctx context.Context, prevFrame gocv.Mat) (goc
 	return img.Clone(), nil
 }
 
-func (app *Application) AttemptLoad(data []byte, fileName string, len int, ctx context.Context, bucketName string) (bool, error) {
+func (app *Application) AttemptLoad(log zerolog.Logger, data []byte, fileName string, len int, ctx context.Context, bucketName string) (bool, error) {
 	maxRetry := 3
 	for i := 1; i <= maxRetry; i++ {
 		tmpData := bytes.NewBuffer(data)
@@ -121,7 +123,7 @@ func (app *Application) AttemptLoad(data []byte, fileName string, len int, ctx c
 		var writer bytes.Buffer
 		tee := io.TeeReader(tmpData, &writer)
 
-		log.Debugf("Start load file: %s, bucketName: %s, fileName: %s, len: %d", time.Now(), bucketName, fileName, len)
+		log.Info().Msgf("Start load file: %s, bucketName: %s, fileName: %s, len: %d", time.Now(), bucketName, fileName, len)
 		info, err := app.minioClient.PutObject(ctx,
 			bucketName,
 			fileName,

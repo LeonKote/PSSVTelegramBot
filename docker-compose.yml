@@ -151,6 +151,28 @@ services:
     networks:
       - camnet
 
+  open_cv:
+    build: microservices/openCV/
+    container_name: open_cv
+    restart: always
+    environment:
+      - ADDRESS=:8085
+      - APIS_AUTH_BASIC=${APIS_AUTH_BASIC}
+      - ENDPOINT=${ENDPOINT}
+      - ACCESS_KEY_ID=${ACCESS_KEY_ID}
+      - SECRET_ACCESS_KEY=${SECRET_ACCESS_KEY}
+      - BUCKET_NAME=${BUCKET_NAME}
+      - FILES_API=${FILES_API}
+      - STREAM_URL=${STREAM_URL}
+      - NOTIFICATIONS_API=${NOTIFY_API}
+      - CAMERAS_API=${CAMERAS_API}
+    depends_on:
+      - database
+      - rtsp_multi
+      - notify
+    networks:
+      - camnet
+
   # live555-proxy-server:
   #   image: paradisi/live555-proxy-server
   #   container_name: live555-proxy-server

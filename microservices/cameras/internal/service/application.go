@@ -9,7 +9,6 @@ import (
 	"io"
 	"time"
 
-	log "github.com/Impisigmatus/service_core/log"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/internal/api"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/internal/config"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/internal/models"
@@ -17,6 +16,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/rs/zerolog"
 )
 
 type Application struct {
@@ -36,13 +36,13 @@ func MakeApplication(ctx context.Context, db *sqlx.DB, cfg config.Config) *Appli
 		Secure: cfg.UseSSL,
 	})
 	if err != nil {
-		log.Panicf("Invalid connect to minio: %s", err)
+		cfg.Logger.Panic().Msgf("Invalid connect to minio: %s", err)
 	}
 
 	camerasRepository := repository.NewRepository(db)
 	cameras, err := camerasRepository.GetAllCameras()
 	if err != nil {
-		log.Panicf("Invalid get cameras: %s", err)
+		cfg.Logger.Panic().Msgf("Invalid get cameras: %s", err)
 	}
 
 	for _, camera := range cameras {
@@ -60,7 +60,7 @@ func MakeApplication(ctx context.Context, db *sqlx.DB, cfg config.Config) *Appli
 	}
 }
 
-func (app *Application) Record(ctx context.Context, record models.Record, isVideo bool, reqId string) (string, error) {
+func (app *Application) Record(logger zerolog.Logger, ctx context.Context, record models.Record, isVideo bool, reqId string) (string, error) {
 	cam, err := app.repo.GetCameraByName(record.NameCamera)
 	if err != nil {
 		return "", fmt.Errorf("Invalid camera name: %s", err)
@@ -86,8 +86,8 @@ func (app *Application) Record(ctx context.Context, record models.Record, isVide
 		FileType:   fileType,
 	}
 
-	log.Debugf("Len: %d.", file.FileSize)
-	ok, err := app.apiFiles.AddFile(file)
+	logger.Debug().Msgf("Len: %d.", file.FileSize)
+	ok, err := app.apiFiles.AddFile(logger, file)
 	if err != nil {
 		return fileName, fmt.Errorf("Invalid load file: %s", err)
 	}
@@ -100,12 +100,12 @@ func (app *Application) Record(ctx context.Context, record models.Record, isVide
 
 	var buff io.ReadCloser
 	if isVideo {
-		buff, err = app.cams[cam.Name].RecordVideo(ctx, *record.Duration, streamUrl)
+		buff, err = app.cams[cam.Name].RecordVideo(logger, ctx, *record.Duration, streamUrl, app.cfg.BasicAuth)
 		if err != nil {
 			return fileName, fmt.Errorf("Invalid record video: %s", err)
 		}
 	} else {
-		buff, err = app.cams[cam.Name].CapturePhoto(streamUrl)
+		buff, err = app.cams[cam.Name].CapturePhoto(logger, streamUrl, app.cfg.AuthForFfmpeg)
 		if err != nil {
 			return fileName, fmt.Errorf("Invalid capture photo: %s", err)
 		}
@@ -124,8 +124,7 @@ func (app *Application) Record(ctx context.Context, record models.Record, isVide
 		return fileName, fmt.Errorf("Invalid make file: %s", err)
 	}
 
-	log.Debugf("Len: %d. Data: %s", lenData, data)
-	ok, err = app.AttemptLoad(data, fileName, lenData, ctx, app.bucketName)
+	ok, fileSize, err := app.AttemptLoad(logger, data, fileName, ctx, app.bucketName)
 	if err != nil {
 		return fileName, fmt.Errorf("Can not load file: %w", err)
 	}
@@ -133,52 +132,54 @@ func (app *Application) Record(ctx context.Context, record models.Record, isVide
 		return fileName, fmt.Errorf("File already exist: %w", err)
 	}
 
-	if err := app.ChangeStatus(fileName, lenData, statusReady); err != nil {
+	if err := app.ChangeStatus(logger, fileName, fileSize, statusReady); err != nil {
 		return fileName, fmt.Errorf("Invalid load file: %w", err)
 	}
 
 	return fileName, nil
 }
 
-func (app *Application) ChangeStatus(fileName string, fileSize int, status string) error {
-	if err := app.apiFiles.ChangeStatus(fileName, fileSize, status); err != nil {
+func (app *Application) ChangeStatus(logger zerolog.Logger, fileName string, fileSize int, status string) error {
+	if err := app.apiFiles.ChangeStatus(logger, fileName, fileSize, status); err != nil {
 		return fmt.Errorf("Invalid add queue: %w", err)
 	}
 
 	return nil
 }
 
-func (app *Application) AttemptLoad(data []byte, fileName string, len int, ctx context.Context, bucketName string) (bool, error) {
+func (app *Application) AttemptLoad(logger zerolog.Logger, data []byte, fileName string, ctx context.Context, bucketName string) (bool, int, error) {
 	maxRetry := 3
+	lenData := 0
 	for i := 1; i <= maxRetry; i++ {
+		lenData = len(data)
 		tmpData := bytes.NewBuffer(data)
 
 		var writer bytes.Buffer
 		tee := io.TeeReader(tmpData, &writer)
 
-		log.Debugf("Start load file: %s, bucketName: %s, fileName: %s, len: %d", time.Now(), bucketName, fileName, len)
+		logger.Debug().Msgf("Start load file: %s, bucketName: %s, fileName: %s, len: %d", time.Now(), bucketName, fileName, lenData)
 		info, err := app.minioClient.PutObject(ctx,
 			bucketName,
 			fileName,
 			tee,
-			int64(len),
+			int64(lenData),
 			minio.PutObjectOptions{
 				ContentType: "application/octet-stream",
 			},
 		)
 		if err != nil {
-			return false, fmt.Errorf("Invalid load file: %s", err)
+			return false, 0, fmt.Errorf("Invalid load file: %s", err)
 		}
 
 		if info.Size == 0 {
-			return false, ErrSizeZero
+			return false, 0, ErrSizeZero
 		}
 
 		hash := md5.Sum(data)
 		hashString := hex.EncodeToString(hash[:])
 		if hashString != info.ETag {
 			if i == 3 {
-				return false, fmt.Errorf("Different hash")
+				return false, 0, fmt.Errorf("Different hash")
 			}
 
 			continue
@@ -187,5 +188,5 @@ func (app *Application) AttemptLoad(data []byte, fileName string, len int, ctx c
 		break
 	}
 
-	return true, nil
+	return true, lenData, nil
 }

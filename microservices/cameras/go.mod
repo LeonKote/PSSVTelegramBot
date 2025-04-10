@@ -3,7 +3,7 @@ module github.com/LeonKote/PSSVTelegramBot/microservices/cameras
 go 1.24.1
 
 require (
-	github.com/Impisigmatus/service_core v0.0.0-20240625175248-85601fa8d3dc
+	github.com/Impisigmatus/service_core v0.0.0-20250408101023-d9bd0eb1d97b
 	github.com/go-chi/chi/v5 v5.2.1
 	github.com/go-resty/resty/v2 v2.16.5
 	github.com/google/uuid v1.6.0

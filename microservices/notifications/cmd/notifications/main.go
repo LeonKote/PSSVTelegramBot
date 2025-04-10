@@ -21,14 +21,12 @@ import (
 )
 
 func main() {
-	cfg := config.MakeConfig()
-	log.Init(log.LevelDebug)
+	logger := log.New(log.LevelDebug)
+	cfg := config.MakeConfig(logger)
 
-	transport := service.NewTransport(
-		bot.NewBot(*cfg),
-	)
+	bot := bot.NewBot(logger, *cfg)
 
-	router := getRouter(context.Background(), transport, cfg.BasicLogin, cfg.BasicPass)
+	router := getRouter(bot, *cfg)
 
 	server := &http.Server{
 		Addr:    cfg.Address,
@@ -37,11 +35,11 @@ func main() {
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Panicf("Invalid service starting: %s", err)
+			logger.Panic().Msgf("Invalid service starting: %s", err)
 		}
-		log.Info("Service stopped")
+		logger.Info().Msg("Service stopped")
 	}()
-	log.Info("Service started")
+	logger.Info().Msg("Service started")
 
 	channel := make(chan os.Signal, 1)
 	signal.Notify(channel,
@@ -54,11 +52,13 @@ func main() {
 	<-channel
 
 	if err := server.Shutdown(context.Background()); err != nil {
-		log.Panicf("Invalid service stopping: %s", err)
+		logger.Panic().Msgf("Invalid service stopping: %s", err)
 	}
 }
 
-func getRouter(ctx context.Context, transport server.ServerInterface, basicLogin string, basicPass string) *chi.Mux {
+func getRouter(bot *bot.Bot, cfg config.Config) *chi.Mux {
+	transport := service.NewTransport(bot)
+
 	router := chi.NewRouter()
 	router.Get("/swagger/*", httpSwagger.WrapHandler)
 
@@ -70,11 +70,13 @@ func getRouter(ctx context.Context, transport server.ServerInterface, basicLogin
 
 	router.Handle("/api/*",
 		middlewares.Use(
-			// middlewares.Use(
-			server.Handler(transport),
-			//middlewares.Authorization([]string{basicLogin, basicPass}),
-			//),
-			middlewares.Logger(),
+			middlewares.Use(
+				middlewares.Use(
+					server.Handler(transport),
+					middlewares.Authorization([]string{cfg.BasicAuth}),
+				),
+				middlewares.ContextLogger()),
+			middlewares.RequestID(cfg.Logger),
 		),
 	)
 

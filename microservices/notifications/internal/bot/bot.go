@@ -3,10 +3,10 @@ package bot
 import (
 	"fmt"
 
-	"github.com/Impisigmatus/service_core/log"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/api"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/config"
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/rs/zerolog"
 )
 
 type Bot struct {
@@ -14,11 +14,12 @@ type Bot struct {
 	usersAPI   api.UsersAPI
 	camerasAPI api.CameraAPI
 	admin      int64
+	log        zerolog.Logger
 }
 
 var LastActions = make(map[int64]int)
 
-func NewBot(cfg config.Config) *Bot {
+func NewBot(log zerolog.Logger, cfg config.Config) *Bot {
 	botApi, err := tg.NewBotAPI(cfg.Token)
 	if err != nil {
 		return &Bot{}
@@ -31,9 +32,10 @@ func NewBot(cfg config.Config) *Bot {
 		usersAPI:   *usersAPI,
 		camerasAPI: *camerasAPI,
 		admin:      cfg.AdminId,
+		log:        log,
 	}
 
-	log.Info("Бот успешно запущен.")
+	log.Info().Msg("Бот успешно запущен.")
 
 	return &bot
 }
@@ -45,7 +47,7 @@ func (bot *Bot) Run() {
 
 	for update := range updates {
 		if err := bot.handle(update); err != nil {
-			log.Errorf("Invalid update: %s", err)
+			bot.log.Error().Msgf("Invalid update: %s", err)
 			continue
 		}
 	}
@@ -53,7 +55,7 @@ func (bot *Bot) Run() {
 
 func (bot *Bot) handle(update tg.Update) error {
 	if update.Message != nil {
-		log.Infof("[%s] %s", update.Message.From.UserName, update.Message.Text)
+		bot.log.Info().Msgf("[%s] %s", update.Message.From.UserName, update.Message.Text)
 		if err := bot.HandleMessage(update.Message); err != nil {
 			return fmt.Errorf("Can not handle message: %s", err)
 		}

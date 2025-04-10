@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
-	"github.com/Impisigmatus/service_core/log"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/models"
 	tg "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 )
@@ -166,10 +166,21 @@ func (bot *Bot) NotifyAlert(fileName string) error {
 			Reader: reader,
 		}
 
+		fileNameInt, err := strconv.ParseInt(fileName[:len(fileName)-4], 10, 64)
+		if err != nil {
+			return fmt.Errorf("Invalid parse file name: %w", err)
+		}
+
+		t := time.Unix(fileNameInt, 0)
+		formatted := t.Format("02.01.2006 15:04:05")
+		caption := fmt.Sprintf("🚨 Движение зафиксировано в %s", formatted)
+
 		msg := tg.NewPhoto(user.Chat_ID, doc)
+		msg.Caption = caption
+
 		_, err = bot.tgAPI.Send(msg)
 		if err != nil {
-			log.Errorf("Invalid send file: %s to user %d", err, user.Chat_ID)
+			bot.log.Error().Msgf("Invalid send file: %s to user %d", err, user.Chat_ID)
 		}
 	}
 

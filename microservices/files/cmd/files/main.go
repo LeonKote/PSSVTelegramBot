@@ -28,9 +28,9 @@ import (
 // @host localhost:8000
 // @BasePath /api
 func main() {
+	logger := log.New(log.LevelDebug)
 	ctx := context.Background()
-	cfg := config.MakeConfig()
-	log.Init(log.LevelDebug)
+	cfg := config.MakeConfig(logger)
 
 	db := sqlx.NewDb(
 		postgres.NewPostgres(
@@ -45,20 +45,20 @@ func main() {
 
 	app := app.NewApp(cfg, db)
 
-	go app.CheckTable(ctx)
+	go app.CheckTable(logger, ctx)
 
 	server := &http.Server{
 		Addr:    cfg.Address,
-		Handler: getRouter(ctx, app, cfg),
+		Handler: getRouter(app, cfg),
 	}
 
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Panicf("Invalid service starting: %s", err)
+			logger.Panic().Msgf("Invalid service starting: %s", err)
 		}
-		log.Info("Service stopped")
+		logger.Info().Msg("Service stopped")
 	}()
-	log.Info("Service started")
+	logger.Info().Msg("Service started")
 
 	channel := make(chan os.Signal, 1)
 	signal.Notify(channel,
@@ -71,11 +71,11 @@ func main() {
 	<-channel
 
 	if err := server.Shutdown(context.Background()); err != nil {
-		log.Panicf("Invalid service stopping: %s", err)
+		logger.Panic().Msgf("Invalid service stopping: %s", err)
 	}
 }
 
-func getRouter(ctx context.Context, app *app.Application, cfg config.Config) *chi.Mux {
+func getRouter(app *app.Application, cfg config.Config) *chi.Mux {
 	transport := service.NewTransport(app)
 
 	router := chi.NewRouter()
@@ -89,11 +89,13 @@ func getRouter(ctx context.Context, app *app.Application, cfg config.Config) *ch
 
 	router.Handle("/api/*",
 		middlewares.Use(
-			// middlewares.Use(
-			server.Handler(transport),
-			//middlewares.Authorization([]string{cfg.BasicLogin, cfg.BasicPass}),
-			//),
-			middlewares.Logger(),
+			middlewares.Use(
+				middlewares.Use(
+					server.Handler(transport),
+					middlewares.Authorization([]string{cfg.BasicAuth}),
+				),
+				middlewares.ContextLogger()),
+			middlewares.RequestID(cfg.Logger),
 		),
 	)
 

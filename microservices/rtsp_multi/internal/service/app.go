@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Impisigmatus/service_core/log"
+	"github.com/rs/zerolog"
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
@@ -31,24 +31,24 @@ func NewApp(rtspUrl string) *Application {
 }
 
 // Захват потока через ffmpeg с возможностью остановки
-func (app *Application) Run(ctx context.Context) error {
-	log.Info("Starting FFmpeg stream via ffmpeg-go")
+func (app *Application) Run(log zerolog.Logger, ctx context.Context) error {
+	log.Info().Msg("Starting FFmpeg stream via ffmpeg-go")
 
 	a, err := ffmpeg.ProbeWithTimeout(app.rtspUrl, 10*time.Second, ffmpeg.KwArgs{
 		"fflags":         "+genpts",
 		"rtsp_transport": "tcp",
 	})
 	if err != nil {
-		log.Errorf("Failed to probe RTSP stream: %v", err)
+		log.Error().Msgf("Failed to probe RTSP stream: %v", err)
 		return err
 	}
 
-	log.Debugf("FFmpeg stream info: %s", a)
+	log.Info().Msgf("FFmpeg stream info: %s", a)
 
 	// Закрываем writer по завершении контекста
 	go func() {
 		<-ctx.Done()
-		log.Info("Context canceled, closing ffmpeg writer")
+		log.Info().Msg("Context canceled, closing ffmpeg writer")
 		app.writer.Close()
 	}()
 
@@ -66,40 +66,40 @@ func (app *Application) Run(ctx context.Context) error {
 		WithErrorOutput(stderr).
 		WithOutput(app.writer)
 
-	log.Infof("FFmpeg command: %s", cmd.String())
-	log.Infof("FFmpeg stderr: %s", stderr.String())
+	log.Info().Msgf("FFmpeg command: %s", cmd.String())
+	log.Info().Msgf("FFmpeg stderr: %s", stderr.String())
 
-	log.Infof("Running ffmpeg with URL: %s", app.rtspUrl)
+	log.Info().Msgf("Running ffmpeg with URL: %s", app.rtspUrl)
 
 	err = cmd.Run()
 
 	// Логируем stderr
 	if stderr.Len() > 0 {
-		log.Errorf("FFmpeg stderr: %s", stderr.String())
+		log.Error().Msgf("FFmpeg stderr: %s", stderr.String())
 	}
 
 	if err != nil {
-		log.Errorf("Failed to run ffmpeg-go: %v", err)
+		log.Error().Msgf("Failed to run ffmpeg-go: %v", err)
 		return err
 	}
-	log.Info("FFmpeg finished")
+	log.Info().Msg("FFmpeg finished")
 
 	return nil
 }
 
 // Рассылает видеопоток всем подписчикам
-func (app *Application) DistributeStream(ctx context.Context) error {
+func (app *Application) DistributeStream(log zerolog.Logger, ctx context.Context) error {
 	buf := make([]byte, 1024)
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Errorf("DistributeStream stopped")
+			log.Error().Msg("DistributeStream stopped")
 			return ctx.Err()
 		default:
 			n, err := app.reader.Read(buf)
 			if err != nil {
-				log.Errorf("Pipe read error: %s", err)
+				log.Error().Msgf("Pipe read error: %s", err)
 				return err
 			}
 			chunk := make([]byte, n)
@@ -110,33 +110,31 @@ func (app *Application) DistributeStream(ctx context.Context) error {
 				select {
 				case ch <- chunk:
 				default:
-					log.Errorf("Dropping frame for slow client")
+					log.Info().Msg("Dropping frame for slow client")
 				}
 			}
 			app.mu.RUnlock()
 		}
 	}
-
-	return nil
 }
 
 // Отдаёт поток подключённому клиенту
-func (app *Application) StreamHandler(w http.ResponseWriter, r *http.Request) {
-	log.Info("New client connected")
+func (app *Application) StreamHandler(log zerolog.Logger, w http.ResponseWriter, r *http.Request) {
+	log.Info().Msg("New client connected")
 	w.Header().Set("Content-Type", "video/mp2t")
 
 	clientChan := make(chan []byte, 200)
 
 	app.mu.Lock()
 	app.subscribers = append(app.subscribers, clientChan)
-	log.Infof("New subscriber added: %d", len(app.subscribers))
+	log.Info().Msgf("New subscriber added: %d", len(app.subscribers))
 
 	app.mu.Unlock()
 
 	defer func() {
 		app.mu.Lock()
 		for i, ch := range app.subscribers {
-			log.Debugf("Removing client %d", i)
+			log.Info().Msgf("Removing client %d", i)
 			if ch == clientChan {
 				app.subscribers = append(app.subscribers[:i], app.subscribers[i+1:]...)
 				break
@@ -144,7 +142,7 @@ func (app *Application) StreamHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		app.mu.Unlock()
 		close(clientChan)
-		log.Info("Client disconnected")
+		log.Info().Msg("Client disconnected")
 	}()
 
 	// Отслеживание отключения клиента
@@ -160,7 +158,7 @@ func (app *Application) StreamHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			_, err := w.Write(chunk)
 			if err != nil {
-				log.Errorf("Write error: %s", err)
+				log.Error().Msgf("Write error: %s", err)
 				return
 			}
 

@@ -3,8 +3,10 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/config"
 	"github.com/go-resty/resty/v2"
 )
 
@@ -12,10 +14,12 @@ type NotifyAPI struct {
 	client *resty.Client
 }
 
-func NewNotifyAPI(url string) *NotifyAPI {
+func NewNotifyAPI(cfg config.Config) *NotifyAPI {
+	auth := strings.Split(cfg.BasicAuth, ":")
 	return &NotifyAPI{
-		client: resty.New().SetBaseURL(url).
-			SetTimeout(1 * time.Minute),
+		client: resty.New().SetBaseURL(cfg.NotificationsApi).
+			SetTimeout(1*time.Minute).
+			SetBasicAuth(auth[0], auth[1]),
 	}
 }
 

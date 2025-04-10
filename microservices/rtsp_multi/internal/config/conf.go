@@ -2,15 +2,15 @@ package config
 
 import (
 	"os"
-	"strings"
 
-	"github.com/Impisigmatus/service_core/log"
+	"github.com/rs/zerolog"
 )
 
 type Config struct {
-	Address    string
-	BasicLogin string
-	BasicPass  string
+	Logger zerolog.Logger
+
+	Address   string
+	BasicAuth string
 
 	CamerasUrl string
 }
@@ -21,15 +21,11 @@ const (
 	camerasUrl = "CAMERAS_API"
 )
 
-func MakeConfig() Config {
-	auth := strings.Split(os.Getenv(auth), ":")
-
-	log.Infof("Auth: %s:%s", auth[0], auth[1])
-
+func MakeConfig(logger zerolog.Logger) Config {
 	return Config{
+		Logger:     logger,
 		Address:    os.Getenv(address),
-		BasicLogin: auth[0],
-		BasicPass:  auth[1],
+		BasicAuth:  os.Getenv(auth),
 		CamerasUrl: os.Getenv(camerasUrl),
 	}
 }

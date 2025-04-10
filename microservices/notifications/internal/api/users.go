@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/config"
@@ -15,9 +16,11 @@ type UsersAPI struct {
 }
 
 func NewUsersApi(cfg config.Config) *UsersAPI {
+	auth := strings.Split(cfg.BasicAuth, ":")
 	return &UsersAPI{
 		client: resty.New().SetBaseURL(cfg.UsersApi).
-			SetTimeout(1 * time.Minute),
+			SetTimeout(1*time.Minute).
+			SetBasicAuth(auth[0], auth[1]),
 	}
 }
 

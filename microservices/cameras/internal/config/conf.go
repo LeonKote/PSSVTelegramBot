@@ -1,17 +1,20 @@
 package config
 
 import (
+	"encoding/base64"
+	"fmt"
 	"os"
 	"strconv"
-	"strings"
 
-	"github.com/Impisigmatus/service_core/log"
+	"github.com/rs/zerolog"
 )
 
 type Config struct {
-	Address    string
-	BasicLogin string
-	BasicPass  string
+	Logger zerolog.Logger
+
+	Address       string
+	BasicAuth     string
+	AuthForFfmpeg string
 
 	Endpoint        string
 	AccessKeyID     string
@@ -30,10 +33,10 @@ type Config struct {
 }
 
 const (
-	useSSL = true
+	UseSSL = true
 
-	address = "ADDRESS"
-	auth    = "APIS_AUTH_BASIC"
+	address   = "ADDRESS"
+	basicAuth = "APIS_AUTH_BASIC"
 
 	pgHost     = "POSTGRES_HOSTNAME"
 	pgPort     = "POSTGRES_PORT"
@@ -54,23 +57,25 @@ const (
 	size = 64
 )
 
-func MakeConfig() Config {
+func MakeConfig(log zerolog.Logger) Config {
 	port, err := strconv.ParseUint(os.Getenv(pgPort), base, size)
 	if err != nil {
-		log.Panicf("Invalid postgres port: %s", err)
+		log.Panic().Msgf("Invalid postgres port: %s", err)
 	}
 
-	auth := strings.Split(os.Getenv(auth), ":")
+	auth := fmt.Sprintf("Authorization: Basic %s\r\n", base64.StdEncoding.EncodeToString([]byte(os.Getenv(basicAuth))))
 
 	return Config{
-		Address:    os.Getenv(address),
-		BasicLogin: auth[0],
-		BasicPass:  auth[1],
+		Logger: log,
+
+		Address:       os.Getenv(address),
+		BasicAuth:     os.Getenv(basicAuth),
+		AuthForFfmpeg: auth,
 
 		Endpoint:        os.Getenv(endpoint),
 		AccessKeyID:     os.Getenv(accessKeyID),
 		SecretAccessKey: os.Getenv(secretAccessKey),
-		UseSSL:          useSSL,
+		UseSSL:          UseSSL,
 		BucketName:      os.Getenv(bucketName),
 		FilesHost:       os.Getenv(filesApi),
 
