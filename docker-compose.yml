@@ -21,12 +21,14 @@ services:
       start_period: 80s
     networks:
       - camnet
+    ports:
+      - "5432:5432"
 
   minio:
     image: docker.io/bitnami/minio:2022
     environment:
-      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
-      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
+      - MINIO_ROOT_USER=${ACCESS_KEY_ID}
+      - MINIO_ROOT_PASSWORD=${SECRET_ACCESS_KEY}
       - MINIO_DEFAULT_BUCKETS=${BUCKET_NAME}
     volumes:
       - './minio_data:/data'
@@ -34,6 +36,25 @@ services:
       - camnet
     ports:
       - "9001:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  minio-init-job:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      bash -c "
+        mc alias set minio http://$ENDPOINT $ACCESS_KEY_ID $SECRET_ACCESS_KEY &&
+        mc mb -p $BUCKET_NAME
+      "
+    restart: "no"
+    networks:
+      - camnet
 
   cameras:
     build: microservices/cameras/
@@ -127,6 +148,28 @@ services:
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
     depends_on:
       - database
+    networks:
+      - camnet
+
+  open_cv:
+    build: microservices/openCV/
+    container_name: open_cv
+    restart: always
+    environment:
+      - ADDRESS=:8085
+      - APIS_AUTH_BASIC=${APIS_AUTH_BASIC}
+      - ENDPOINT=${ENDPOINT}
+      - ACCESS_KEY_ID=${ACCESS_KEY_ID}
+      - SECRET_ACCESS_KEY=${SECRET_ACCESS_KEY}
+      - BUCKET_NAME=${BUCKET_NAME}
+      - FILES_API=${FILES_API}
+      - STREAM_URL=${STREAM_URL}
+      - NOTIFICATIONS_API=${NOTIFY_API}
+      - CAMERAS_API=${CAMERAS_API}
+    depends_on:
+      - database
+      - rtsp_multi
+      - notify
     networks:
       - camnet
 

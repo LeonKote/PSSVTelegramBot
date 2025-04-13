@@ -4,12 +4,12 @@ import (
 	"context"
 	"time"
 
-	"github.com/Impisigmatus/service_core/log"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/files/internal/api"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/files/internal/config"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/files/internal/models"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/files/internal/repository"
 	"github.com/jmoiron/sqlx"
+	"github.com/rs/zerolog"
 )
 
 type Application struct {
@@ -24,26 +24,26 @@ func NewApp(cfg config.Config, db *sqlx.DB) *Application {
 	}
 }
 
-func (app *Application) CheckTable(ctx context.Context) {
+func (app *Application) CheckTable(log zerolog.Logger, ctx context.Context) {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
-			log.Info("CheckTable остановлен")
+			log.Info().Msg("CheckTable остановлен")
 			return
 
 		case <-ticker.C:
 			files, err := app.GetAllFilesReady()
 			if err != nil {
-				log.Error("Can not get all files with arg 'ready': %s", err)
+				log.Error().Msgf("Can not get all files with arg 'ready': %s", err)
 				continue
 			}
 
 			for _, file := range files {
 				if err := app.fileRepo.UpdateFileData(file.FilePath, "processing", file.FileSize); err != nil {
-					log.Errorf("ошибка обновления файла: %s", err)
+					log.Error().Msgf("ошибка обновления файла: %s", err)
 				}
 
 				go func(f models.File) {
@@ -54,11 +54,11 @@ func (app *Application) CheckTable(ctx context.Context) {
 					}
 
 					if err := app.notify.Notify(notify); err != nil {
-						log.Errorf("ошибка уведомления: %s", err)
+						log.Error().Msgf("ошибка уведомления: %s", err)
 					}
 
 					if err := app.fileRepo.UpdateFileData(f.FilePath, "success", f.FileSize); err != nil {
-						log.Errorf("ошибка обновления файла: %s", err)
+						log.Error().Msgf("ошибка обновления файла: %s", err)
 					}
 				}(file)
 			}

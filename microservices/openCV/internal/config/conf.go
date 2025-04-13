@@ -4,7 +4,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
-	"strconv"
 
 	"github.com/rs/zerolog"
 )
@@ -12,7 +11,8 @@ import (
 type Config struct {
 	Logger zerolog.Logger
 
-	Address       string
+	Address string
+
 	BasicAuth     string
 	AuthForFfmpeg string
 
@@ -21,52 +21,34 @@ type Config struct {
 	SecretAccessKey string
 	UseSSL          bool
 	BucketName      string
-	FilesHost       string
 
-	StreamUrl string
-
-	PgHost string
-	PgPort uint64
-	PgUser string
-	PgDB   string
-	PgPass string
+	NotificationsApi string
+	CamerasApi       string
+	StreamUrl        string
 }
 
 const (
 	UseSSL = true
 
-	address   = "ADDRESS"
-	basicAuth = "APIS_AUTH_BASIC"
+	address = "ADDRESS"
 
-	pgHost     = "POSTGRES_HOSTNAME"
-	pgPort     = "POSTGRES_PORT"
-	pgDB       = "POSTGRES_DATABASE"
-	pgUser     = "POSTGRES_USER"
-	pgPassword = "POSTGRES_PASSWORD"
+	basicAuth = "APIS_AUTH_BASIC"
 
 	endpoint        = "ENDPOINT"
 	accessKeyID     = "ACCESS_KEY_ID"
 	secretAccessKey = "SECRET_ACCESS_KEY"
 	bucketName      = "BUCKET_NAME"
-	rtsp            = "RTSP"
-	filesApi        = "FILES_API"
 
-	streamUrl = "STREAM_URL"
-
-	base = 10
-	size = 64
+	notificationsApi = "NOTIFICATIONS_API"
+	camerasApi       = "CAMERAS_API"
+	streamUrl        = "STREAM_URL"
 )
 
-func MakeConfig(log zerolog.Logger) Config {
-	port, err := strconv.ParseUint(os.Getenv(pgPort), base, size)
-	if err != nil {
-		log.Panic().Msgf("Invalid postgres port: %s", err)
-	}
-
+func MakeConfig(logger zerolog.Logger) Config {
 	auth := fmt.Sprintf("Authorization: Basic %s\r\n", base64.StdEncoding.EncodeToString([]byte(os.Getenv(basicAuth))))
 
 	return Config{
-		Logger: log,
+		Logger: logger,
 
 		Address:       os.Getenv(address),
 		BasicAuth:     os.Getenv(basicAuth),
@@ -77,14 +59,9 @@ func MakeConfig(log zerolog.Logger) Config {
 		SecretAccessKey: os.Getenv(secretAccessKey),
 		UseSSL:          UseSSL,
 		BucketName:      os.Getenv(bucketName),
-		FilesHost:       os.Getenv(filesApi),
 
-		StreamUrl: os.Getenv(streamUrl),
-
-		PgHost: os.Getenv(pgHost),
-		PgPort: port,
-		PgUser: os.Getenv(pgUser),
-		PgDB:   os.Getenv(pgDB),
-		PgPass: os.Getenv(pgPassword),
+		NotificationsApi: os.Getenv(notificationsApi),
+		CamerasApi:       os.Getenv(camerasApi),
+		StreamUrl:        os.Getenv(streamUrl),
 	}
 }

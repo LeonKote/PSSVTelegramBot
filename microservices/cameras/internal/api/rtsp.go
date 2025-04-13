@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Impisigmatus/service_core/log"
+	"github.com/rs/zerolog"
 	ffmpeg "github.com/u2takey/ffmpeg-go"
 )
 
@@ -28,20 +28,29 @@ func NewCamera(rtspURL string) *Camera {
 // chat_id
 // file(photo/video)
 
-func (cam *Camera) RecordVideo(ctx context.Context, duration int, sourceStreamURL string) (io.ReadCloser, error) {
+func (cam *Camera) RecordVideo(logger zerolog.Logger,
+	ctx context.Context,
+	duration int,
+	streamUrl string,
+	basicAuth string,
+) (io.ReadCloser, error) {
+	auth := strings.Split(basicAuth, ":")
+
 	// Контекст с таймаутом на всю запись
 	ctxWithTimeout, cancel := context.WithTimeout(ctx, time.Duration(duration)*time.Second)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctxWithTimeout, http.MethodGet, sourceStreamURL, nil)
+	req, err := http.NewRequestWithContext(ctxWithTimeout, http.MethodGet, streamUrl, nil)
 	if err != nil {
-		log.Errorf("Error creating request: %s", err)
+		logger.Error().Msgf("Error creating request: %s", err)
 		return nil, err
 	}
 
+	req.SetBasicAuth(auth[0], auth[1])
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		log.Errorf("Error connecting to camera: %s", err)
+		logger.Error().Msgf("Error connecting to camera: %s", err)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -53,14 +62,14 @@ func (cam *Camera) RecordVideo(ctx context.Context, duration int, sourceStreamUR
 	if err != nil {
 		// Игнорируем таймаут как нормальное завершение
 		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "context deadline exceeded") {
-			log.Info("Видео обрезано по времени — без ошибок.")
+			logger.Info().Msg("Видео обрезано по времени — без ошибок.")
 		} else {
-			log.Errorf("Ошибка при копировании: %s", err)
+			logger.Error().Msgf("Ошибка при копировании: %s", err)
 			return nil, err
 		}
 	}
 
-	log.Info("Копирование завершено")
+	logger.Info().Msg("Копирование завершено")
 	buff, err := cam.encodeVideo(&buffer, duration)
 	if err != nil {
 		return nil, err
@@ -69,17 +78,20 @@ func (cam *Camera) RecordVideo(ctx context.Context, duration int, sourceStreamUR
 	return buff, nil
 }
 
-func (cam *Camera) CapturePhoto(sourceStreamURL string) (io.ReadCloser, error) {
-	log.Debugf("Start capture photo at: %s", time.Now())
+func (cam *Camera) CapturePhoto(logger zerolog.Logger, streamUrl string, auth string) (io.ReadCloser, error) {
+	logger.Debug().Msgf("Start capture photo at: %s", time.Now())
 	var buffer bytes.Buffer
-	log.Debugf("Url: %s, frame: %d, quality: %d, format: %s", sourceStreamURL, frame, quality, fImg)
-	err := ffmpeg.Input(sourceStreamURL).
-		Output("pipe:",
+	logger.Debug().Msgf("Url: %s", streamUrl)
+	err := ffmpeg.Input(streamUrl, ffmpeg.KwArgs{
+		"fflags":  "+genpts", // добавим безопасный флаг
+		"f":       "mjpeg",   // явно указываем, что читаем MJPEG
+		"headers": auth,
+	}).
+		Output("pipe:1",
 			ffmpeg.KwArgs{
-				"ss":       "3",
-				"frames:v": "1",      // только один кадр
-				"f":        "image2", // формат одиночного изображения
-				"q:v":      "1",      // качество JPEG (1 — max, 31 — min)
+				"f":        "image2pipe", // формат — один файл (image2)
+				"c:v":      "mjpeg",
+				"frames:v": "1",
 			}).
 		WithOutput(&buffer).
 		WithErrorOutput(os.Stderr).
@@ -88,7 +100,7 @@ func (cam *Camera) CapturePhoto(sourceStreamURL string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("Failed to encode photo: %w", err)
 	}
 
-	log.Infof("End capture photo at: %s, len: %d", time.Now(), buffer.Len())
+	logger.Info().Msgf("End capture photo at: %s, len: %d", time.Now(), buffer.Len())
 	return io.NopCloser(&buffer), nil
 }
 
@@ -107,6 +119,7 @@ func (cam *Camera) encodeVideo(inputBuf *bytes.Buffer, duration int) (io.ReadClo
 	err = ffmpeg.
 		Input("pipe:0", ffmpeg.KwArgs{
 			"t": fmt.Sprintf("%d", duration),
+			"f": "mjpeg",
 		}).
 		Output(fileName,
 			ffmpeg.KwArgs{

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LeonKote/PSSVTelegramBot/microservices/rtsp_multi/internal/config"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/rtsp_multi/internal/models"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/config"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/models"
 	"github.com/go-resty/resty/v2"
 	jsoniter "github.com/json-iterator/go"
 )
@@ -17,10 +17,10 @@ type CameraAPI struct {
 
 func NewCameraApi(cfg config.Config) *CameraAPI {
 	auth := strings.Split(cfg.BasicAuth, ":")
-
 	return &CameraAPI{
-		client: resty.New().SetBaseURL(cfg.CamerasUrl).
-			SetTimeout(1*time.Minute).SetBasicAuth(auth[0], auth[1]),
+		client: resty.New().SetBaseURL(cfg.CamerasApi).
+			SetTimeout(1*time.Minute).
+			SetBasicAuth(auth[0], auth[1]),
 	}
 }
 

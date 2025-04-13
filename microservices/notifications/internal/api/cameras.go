@@ -2,6 +2,7 @@ package api
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/config"
@@ -15,9 +16,11 @@ type CameraAPI struct {
 }
 
 func NewCameraApi(cfg config.Config) *CameraAPI {
+	auth := strings.Split(cfg.BasicAuth, ":")
 	return &CameraAPI{
 		client: resty.New().SetBaseURL(cfg.CamerasApi).
-			SetTimeout(1 * time.Minute),
+			SetTimeout(1*time.Minute).
+			SetBasicAuth(auth[0], auth[1]),
 	}
 }
 

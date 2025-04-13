@@ -4,10 +4,13 @@ import (
 	"log"
 	"os"
 	"strconv"
-	"strings"
+
+	"github.com/rs/zerolog"
 )
 
 type Config struct {
+	Logger zerolog.Logger
+
 	AdminId int64
 
 	Token string
@@ -15,9 +18,8 @@ type Config struct {
 	UsersApi   string
 	CamerasApi string
 
-	Address    string
-	BasicLogin string
-	BasicPass  string
+	Address   string
+	BasicAuth string
 }
 
 const (
@@ -35,13 +37,11 @@ const (
 	size = 64
 )
 
-func MakeConfig() *Config {
+func MakeConfig(logger zerolog.Logger) *Config {
 	adminID, err := strconv.ParseInt(os.Getenv(adminIdStr), base, size)
 	if err != nil {
 		log.Fatalf("Ошибка конвертации ADMIN_CHAT_ID в int64: %v", err)
 	}
-
-	auth := strings.Split(os.Getenv(auth), ":")
 
 	return &Config{
 		AdminId:    adminID,
@@ -49,7 +49,6 @@ func MakeConfig() *Config {
 		UsersApi:   os.Getenv(usersApi),
 		CamerasApi: os.Getenv(camerasApi),
 		Address:    os.Getenv(address),
-		BasicLogin: auth[0],
-		BasicPass:  auth[1],
+		BasicAuth:  os.Getenv(auth),
 	}
 }

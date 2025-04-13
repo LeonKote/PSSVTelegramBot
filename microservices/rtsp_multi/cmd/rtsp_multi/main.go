@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/Impisigmatus/service_core/log"
+	"github.com/Impisigmatus/service_core/middlewares"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/rtsp_multi/internal/api"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/rtsp_multi/internal/config"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/rtsp_multi/internal/service"
@@ -21,13 +22,13 @@ import (
 // @host localhost:8000
 // @BasePath /api
 func main() {
-	cfg := config.MakeConfig()
-	log.Init(log.LevelDebug)
+	logger := log.New(log.LevelDebug)
+	cfg := config.MakeConfig(logger)
 
 	api := api.NewCameraApi(cfg)
 	cameras, err := api.GetAllCameras()
 	if err != nil {
-		log.Panicf("Invalid service starting: %s", err)
+		logger.Panic().Msgf("Invalid service starting: %s", err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -35,35 +36,35 @@ func main() {
 
 	apps := make(map[string]*service.Application)
 	for _, camera := range cameras {
-		log.Debugf("Camera: %s", camera.Name)
+		logger.Info().Msgf("Camera: %s", camera.Name)
 		// создаём копию объекта camera, чтобы избежать гонки
 		cam := camera
 
 		app := service.NewApp(cam.Rtsp)
 		go func(name string, app *service.Application) {
-			log.Infof("Launching camera: %s", name)
+			logger.Info().Msgf("Launching camera: %s", name)
 			go func() {
-				log.Info("FFmpeg started")
-				err := app.Run(ctx)
+				logger.Info().Msg("FFmpeg started")
+				err := app.Run(logger, ctx)
 				if err != nil {
-					log.Errorf("FFmpeg error: %v", err)
+					logger.Error().Msgf("FFmpeg error: %v", err)
 				}
-				log.Info("FFmpeg stopped")
+				logger.Info().Msg("FFmpeg stopped")
 			}()
 			go func() {
-				log.Info("DistributeStream started")
-				err := app.DistributeStream(ctx)
+				logger.Info().Msg("DistributeStream started")
+				err := app.DistributeStream(logger, ctx)
 				if err != nil {
-					log.Errorf("DistributeStream error: %v", err)
+					logger.Error().Msgf("DistributeStream error: %v", err)
 				}
-				log.Info("DistributeStream stopped")
+				logger.Info().Msg("DistributeStream stopped")
 			}()
 		}(cam.Name, app)
 
 		apps[cam.Name] = app
 	}
 
-	router := getRouter(apps)
+	router := getRouter(apps, cfg)
 
 	server := &http.Server{
 		Addr:    cfg.Address,
@@ -72,11 +73,11 @@ func main() {
 
 	// Запуск HTTP-сервера
 	go func() {
-		log.Infof("Service listening on %s", cfg.Address)
+		logger.Info().Msgf("Service listening on %s", cfg.Address)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Panicf("HTTP server error: %s", err)
+			logger.Panic().Msgf("HTTP server error: %s", err)
 		}
-		log.Info("HTTP server stopped")
+		logger.Info().Msg("HTTP server stopped")
 	}()
 
 	// Обработка сигналов завершения
@@ -89,21 +90,20 @@ func main() {
 		syscall.SIGQUIT,
 	)
 
-	sig := <-stop
-	log.Infof("Received signal: %v. Shutting down...", sig)
+	<-stop
 
 	// Завершение всех потоков
 	cancel()
 
 	// Корректное завершение HTTP-сервера
 	if err := server.Shutdown(ctx); err != nil {
-		log.Panicf("Error shutting down server: %s", err)
+		logger.Panic().Msgf("Error shutting down server: %s", err)
 	}
 
-	log.Info("Service gracefully stopped")
+	logger.Info().Msg("Service gracefully stopped")
 }
 
-func getRouter(apps map[string]*service.Application) *chi.Mux {
+func getRouter(apps map[string]*service.Application, cfg config.Config) *chi.Mux {
 	router := chi.NewRouter()
 
 	router.HandleFunc("/debug/pprof/", pprof.Index)
@@ -113,15 +113,17 @@ func getRouter(apps map[string]*service.Application) *chi.Mux {
 	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
 	router.Route("/stream", func(r chi.Router) {
-		r.Get("/{camera_name}", func(w http.ResponseWriter, r *http.Request) {
-			cameraName := chi.URLParam(r, "camera_name")
-			log.Debugf("Stream request for camera: %s.", cameraName)
-			if app, ok := apps[cameraName]; ok {
-				app.StreamHandler(w, r)
-			} else {
-				http.Error(w, "Camera not found", http.StatusNotFound)
-			}
-		})
+		r.Handle("/{camera_name}",
+			middlewares.Use(
+				middlewares.Use(
+					middlewares.Use(
+						service.NewTransport(apps),
+						middlewares.Authorization([]string{cfg.BasicAuth}),
+					),
+					middlewares.ContextLogger()),
+				middlewares.RequestID(cfg.Logger),
+			),
+		)
 	})
 
 	return router

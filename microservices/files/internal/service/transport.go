@@ -5,11 +5,13 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/Impisigmatus/service_core/log"
 	"github.com/Impisigmatus/service_core/utils"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/files/autogen/server"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/files/internal/app"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/files/internal/models"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/rs/zerolog"
 )
 
 type Transport struct {
@@ -38,24 +40,30 @@ func NewTransport(app *app.Application) server.ServerInterface {
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) PostApiFilesAdd(w http.ResponseWriter, r *http.Request) {
+	log, ok := r.Context().Value(log.CtxKey).(zerolog.Logger)
+	if !ok {
+		utils.WriteString(zerolog.Logger{}, w, http.StatusInternalServerError, fmt.Errorf("Invalid logger"), "Невалидный логгер")
+		return
+	}
+
 	data, err := io.ReadAll(r.Body)
 	if err != nil {
-		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid read body: %s", err), "Не удалось прочитать тело запроса")
+		utils.WriteString(log, w, http.StatusInternalServerError, fmt.Errorf("Invalid read body: %s", err), "Не удалось прочитать тело запроса")
 		return
 	}
 
 	var file models.File
 	if err := jsoniter.Unmarshal(data, &file); err != nil {
-		utils.WriteString(w, http.StatusBadRequest, fmt.Errorf("Invalid parse body: %s", err), "Не удалось распарсить тело запроса формата JSON")
+		utils.WriteString(log, w, http.StatusBadRequest, fmt.Errorf("Invalid parse body: %s", err), "Не удалось распарсить тело запроса формата JSON")
 		return
 	}
 
 	if err := transport.app.AddFile(file); err != nil {
-		utils.WriteString(w, http.StatusInternalServerError, err, "Не удалось добавить информацию о файле")
+		utils.WriteString(log, w, http.StatusInternalServerError, err, "Не удалось добавить информацию о файле")
 		return
 	}
 
-	utils.WriteNoContent(w)
+	utils.WriteNoContent(log, w)
 }
 
 // Set godoc
@@ -74,13 +82,19 @@ func (transport *Transport) PostApiFilesAdd(w http.ResponseWriter, r *http.Reque
 // @Failure 401 {object} nil "Ошибка авторизац®ии"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) DeleteApiFilesDeleteUuid(w http.ResponseWriter, r *http.Request, uuid string) {
-	err := transport.app.RemoveFile(uuid)
-	if err != nil {
-		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid remove file: %s", err), "Невозможно удалить файл")
+	log, ok := r.Context().Value(log.CtxKey).(zerolog.Logger)
+	if !ok {
+		utils.WriteString(zerolog.Logger{}, w, http.StatusInternalServerError, fmt.Errorf("Invalid logger"), "Невалидный логгер")
 		return
 	}
 
-	utils.WriteString(w, http.StatusOK, nil, "Файла удалён")
+	err := transport.app.RemoveFile(uuid)
+	if err != nil {
+		utils.WriteString(log, w, http.StatusInternalServerError, fmt.Errorf("Invalid remove file: %s", err), "Невозможно удалить файл")
+		return
+	}
+
+	utils.WriteString(log, w, http.StatusOK, nil, "Файла удалён")
 }
 
 // Set godoc
@@ -99,13 +113,19 @@ func (transport *Transport) DeleteApiFilesDeleteUuid(w http.ResponseWriter, r *h
 // @Failure 401 {object} nil "Ошибка авторизации"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) GetApiFilesGetUuid(w http.ResponseWriter, r *http.Request, uuid string) {
-	file, err := transport.app.GetByUuid(uuid)
-	if err != nil {
-		utils.WriteString(w, http.StatusBadRequest, fmt.Errorf("Invalid get file: %s", err), "Не удалось получить файл")
+	log, ok := r.Context().Value(log.CtxKey).(zerolog.Logger)
+	if !ok {
+		utils.WriteString(zerolog.Logger{}, w, http.StatusInternalServerError, fmt.Errorf("Invalid logger"), "Невалидный логгер")
 		return
 	}
 
-	utils.WriteObject(w, file)
+	file, err := transport.app.GetByUuid(uuid)
+	if err != nil {
+		utils.WriteString(log, w, http.StatusBadRequest, fmt.Errorf("Invalid get file: %s", err), "Не удалось получить файл")
+		return
+	}
+
+	utils.WriteObject(log, w, file)
 }
 
 // Set godoc
@@ -123,17 +143,23 @@ func (transport *Transport) GetApiFilesGetUuid(w http.ResponseWriter, r *http.Re
 // @Failure 404 {object} nil "Ошибка получения данных"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) GetApiFilesGet(w http.ResponseWriter, r *http.Request) {
-	files, err := transport.app.GetAllFiles()
-	if err != nil {
-		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid get files: %s", err), "Не удалось получить информацию о файлах")
-		return
-	}
-	if len(files) == 0 {
-		utils.WriteString(w, http.StatusNotFound, fmt.Errorf("DB is empty: %s", err), "В базе нет файлов")
+	log, ok := r.Context().Value(log.CtxKey).(zerolog.Logger)
+	if !ok {
+		utils.WriteString(zerolog.Logger{}, w, http.StatusInternalServerError, fmt.Errorf("Invalid logger"), "Невалидный логгер")
 		return
 	}
 
-	utils.WriteObject(w, files)
+	files, err := transport.app.GetAllFiles()
+	if err != nil {
+		utils.WriteString(log, w, http.StatusInternalServerError, fmt.Errorf("Invalid get files: %s", err), "Не удалось получить информацию о файлах")
+		return
+	}
+	if len(files) == 0 {
+		utils.WriteString(log, w, http.StatusNotFound, fmt.Errorf("DB is empty: %s", err), "В базе нет файлов")
+		return
+	}
+
+	utils.WriteObject(log, w, files)
 }
 
 // Set godoc
@@ -157,10 +183,17 @@ func (transport *Transport) GetApiFilesGet(w http.ResponseWriter, r *http.Reques
 // @Failure 404 {object} nil "Ошибка получения данных"
 // @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
 func (transport *Transport) PutApiFilesUuidFileNameFileSizeStatus(w http.ResponseWriter, r *http.Request, uuid string, fileName string, fileSize int, status string) {
-	filePath := fmt.Sprintf("/%s/%s", uuid, fileName)
-	if err := transport.app.UpdateFile(filePath, status, fileSize); err != nil {
-		utils.WriteString(w, http.StatusInternalServerError, fmt.Errorf("Invalid update file: %s", err), "Не удалось обновить файл")
+	log, ok := r.Context().Value(log.CtxKey).(zerolog.Logger)
+	if !ok {
+		utils.WriteString(zerolog.Logger{}, w, http.StatusInternalServerError, fmt.Errorf("Invalid logger"), "Невалидный логгер")
+		return
 	}
 
-	utils.WriteNoContent(w)
+	filePath := fmt.Sprintf("/%s/%s", uuid, fileName)
+	if err := transport.app.UpdateFile(filePath, status, fileSize); err != nil {
+		utils.WriteString(log, w, http.StatusInternalServerError, fmt.Errorf("Invalid update file: %s", err), "Не удалось обновить файл")
+		return
+	}
+
+	utils.WriteNoContent(log, w)
 }

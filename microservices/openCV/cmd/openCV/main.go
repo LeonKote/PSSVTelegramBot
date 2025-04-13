@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -9,25 +10,36 @@ import (
 	"syscall"
 
 	"github.com/Impisigmatus/service_core/log"
-	"github.com/Impisigmatus/service_core/middlewares"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/autogen/server"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/bot"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/config"
-	"github.com/LeonKote/PSSVTelegramBot/microservices/notifications/internal/service"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/api"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/app"
+	"github.com/LeonKote/PSSVTelegramBot/microservices/openCV/internal/config"
 	"github.com/go-chi/chi/v5"
-	httpSwagger "github.com/swaggo/http-swagger"
-
-	_ "github.com/LeonKote/PSSVTelegramBot/microservices/notifications/autogen/docs"
 )
 
 func main() {
 	logger := log.New(log.LevelDebug)
+	ctx := context.Background()
 	cfg := config.MakeConfig(logger)
 
-	bot := bot.NewBot(logger, *cfg)
+	api := api.NewCameraApi(cfg)
+	cameras, err := api.GetAllCameras()
+	if err != nil {
+		logger.Panic().Msgf("Invalid service starting: %s", err)
+	}
 
-	router := getRouter(bot, *cfg)
+	apps := make(map[string]*app.Application)
+	for _, camera := range cameras {
+		url := fmt.Sprintf("%s/%s", cfg.StreamUrl, camera.Name)
+		app := app.MakeApplication(logger, url, cfg)
 
+		go func() {
+			go app.CheckPhoto(logger, ctx)
+		}()
+
+		apps[camera.Name] = app
+	}
+
+	router := getRouter(cfg)
 	server := &http.Server{
 		Addr:    cfg.Address,
 		Handler: router,
@@ -56,29 +68,14 @@ func main() {
 	}
 }
 
-func getRouter(bot *bot.Bot, cfg config.Config) *chi.Mux {
-	transport := service.NewTransport(bot)
-
+func getRouter(cfg config.Config) *chi.Mux {
 	router := chi.NewRouter()
-	router.Get("/swagger/*", httpSwagger.WrapHandler)
 
 	router.HandleFunc("/debug/pprof/", pprof.Index)
 	router.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 	router.HandleFunc("/debug/pprof/profile", pprof.Profile)
 	router.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 	router.HandleFunc("/debug/pprof/trace", pprof.Trace)
-
-	router.Handle("/api/*",
-		middlewares.Use(
-			middlewares.Use(
-				middlewares.Use(
-					server.Handler(transport),
-					middlewares.Authorization([]string{cfg.BasicAuth}),
-				),
-				middlewares.ContextLogger()),
-			middlewares.RequestID(cfg.Logger),
-		),
-	)
 
 	return router
 }

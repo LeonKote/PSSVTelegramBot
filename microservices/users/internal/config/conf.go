@@ -3,15 +3,15 @@ package config
 import (
 	"os"
 	"strconv"
-	"strings"
 
-	"github.com/Impisigmatus/service_core/log"
+	"github.com/rs/zerolog"
 )
 
 type Config struct {
-	Address    string
-	BasicLogin string
-	BasicPass  string
+	Logger zerolog.Logger
+
+	Address   string
+	BasicAuth string
 
 	PgHost string
 	PgPort uint64
@@ -34,18 +34,17 @@ const (
 	size = 64
 )
 
-func MakeConfig() Config {
+func MakeConfig(logger zerolog.Logger) Config {
 	port, err := strconv.ParseUint(os.Getenv(pgPort), base, size)
 	if err != nil {
-		log.Panicf("Invalid postgres port: %s", err)
+		logger.Panic().Msgf("Invalid postgres port: %s", err)
 	}
 
-	auth := strings.Split(os.Getenv(auth), ":")
-
 	return Config{
-		Address:    os.Getenv(address),
-		BasicLogin: auth[0],
-		BasicPass:  auth[1],
+		Logger: logger,
+
+		Address:   os.Getenv(address),
+		BasicAuth: os.Getenv(auth),
 
 		PgHost: os.Getenv(pgHost),
 		PgPort: port,

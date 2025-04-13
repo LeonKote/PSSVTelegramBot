@@ -3,7 +3,6 @@ package repository
 import (
 	"fmt"
 
-	_ "github.com/Impisigmatus/service_core/postgres"
 	"github.com/LeonKote/PSSVTelegramBot/microservices/cameras/internal/models"
 	"github.com/jmoiron/sqlx"
 )
@@ -11,7 +10,7 @@ import (
 type ICamerasRepository interface {
 	GetAllCameras() ([]models.Camera, error)
 	GetCameraByName(name string) (models.Camera, error)
-	AddCamera(user models.Camera) error
+	AddCamera(camera models.Camera) error
 	RemoveCamera(name string) (bool, error)
 }
 
