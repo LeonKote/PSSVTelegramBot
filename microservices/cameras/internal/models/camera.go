@@ -10,3 +10,9 @@ type Record struct {
 	NameCamera string `json:"name"`
 	Duration   *int   `json:"duration"`
 } // @name record
+
+type RTSP struct {
+	Rtsp string `db:"rtsp" json:"rtsp"`
+} // @name rtsp
+
+

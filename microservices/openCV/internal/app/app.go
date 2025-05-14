@@ -27,7 +27,7 @@ type Application struct {
 func MakeApplication(log zerolog.Logger, streamUrl string, cfg config.Config) *Application {
 	minioClient, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
-		Secure: cfg.UseSSL,
+		Secure: false,
 	})
 	if err != nil {
 		log.Panic().Msgf("Invalid connect to minio: %s", err)

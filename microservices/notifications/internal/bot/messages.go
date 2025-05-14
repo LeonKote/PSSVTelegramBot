@@ -12,15 +12,22 @@ import (
 )
 
 func (bot *Bot) HandleMessage(msg *tg.Message) error {
+	chatId := msg.Chat.ID
 	if msg.Text == "/start" || msg.Text == start {
-		user, err := bot.usersAPI.GetUserByChatID(msg.Chat.ID)
+		if UserRtsp[chatId] != "" || UserStates[chatId] != "" || CameraName[chatId] != "" {
+			delete(UserRtsp, chatId)
+			delete(UserStates, chatId)
+			delete(CameraName, chatId)
+		}
+
+		user, err := bot.usersAPI.GetUserByChatID(chatId)
 		if err != nil {
 			return fmt.Errorf("Invalid get user by chat id: %s", err)
 		}
 
-		if msg.Chat.ID == bot.admin && user == (models.User{}) {
+		if chatId == bot.admin && user == (models.User{}) {
 			ok, err := bot.usersAPI.AddUser(models.User{
-				Chat_ID:  msg.Chat.ID,
+				Chat_ID:  chatId,
 				Username: msg.From.UserName,
 				Name:     msg.From.FirstName,
 				Is_Admin: true,
@@ -57,7 +64,7 @@ func (bot *Bot) HandleMessage(msg *tg.Message) error {
 
 		if user == (models.User{}) {
 			ok, err := bot.usersAPI.AddUser(models.User{
-				Chat_ID:  msg.Chat.ID,
+				Chat_ID:  chatId,
 				Username: msg.From.UserName,
 				Name:     msg.From.FirstName,
 				Is_Admin: false,
@@ -73,7 +80,7 @@ func (bot *Bot) HandleMessage(msg *tg.Message) error {
 					msg.From.UserName,
 					msg.From.ID))
 
-			fromChatID := strconv.Itoa(int(msg.From.ID))
+			fromChatID := strconv.Itoa(int(chatId))
 			keyboard := tg.NewInlineKeyboardMarkup(
 				tg.NewInlineKeyboardRow(
 					tg.NewInlineKeyboardButtonData("✅ Добавить", fmt.Sprintf("%s:%s", approve, fromChatID)),
@@ -87,11 +94,120 @@ func (bot *Bot) HandleMessage(msg *tg.Message) error {
 			}
 
 			// Уведомляем пользователя
-			newMsg, err := bot.tgAPI.Send(tg.NewMessage(msg.From.ID, "Ваш запрос отправлен администратору на проверку. Ожидайте."))
+			newMsg, err := bot.tgAPI.Send(tg.NewMessage(chatId, "Ваш запрос отправлен администратору на проверку. Ожидайте."))
 			if err != nil {
 				return fmt.Errorf("Can not send msg: %s", err)
 			}
-			LastActions[msg.From.ID] = newMsg.MessageID
+			LastActions[chatId] = newMsg.MessageID
+		}
+	} else if UserStates[chatId] == "waitingForRTSP" {
+		rtspAddress := msg.Text
+		if strings.Contains(rtspAddress, "rtsp://") {
+			// Сохраняем RTSP-адрес в состояние пользователя
+			UserStates[chatId] = "waitingForName" // Переходим ко следующему шагу
+			UserRtsp[chatId] = rtspAddress
+
+			// Запрашиваем ввод названия камеры
+			if err := bot.SendMessage(chatId, "Теперь введите название камеры:", nil); err != nil {
+				return fmt.Errorf("Can not send msg: %s", err)
+			}
+		} else {
+			// Если введен некорректный RTSP-адрес
+			if err := bot.SendMessage(chatId, "Пожалуйста, введите правильный RTSP-адрес.", nil); err != nil {
+				return fmt.Errorf("Can not send msg: %s", err)
+			}
+		}
+		return nil
+	} else if UserStates[chatId] == "waitingForName" {
+		cameraName := msg.Text
+
+		err := bot.camerasAPI.AddCamera(models.Camera{
+			Name: cameraName,
+			Rtsp: UserRtsp[chatId],
+		})
+		if err != nil {
+			delete(UserRtsp, chatId)
+			delete(UserStates, chatId)
+
+			buttons := tg.NewInlineKeyboardMarkup(
+				tg.NewInlineKeyboardRow(
+					tg.NewInlineKeyboardButtonData(listCameras, toCameras),
+				),
+				tg.NewInlineKeyboardRow(
+					tg.NewInlineKeyboardButtonData(addCameraAuto, toAddCameraAuto),
+				),
+				tg.NewInlineKeyboardRow(
+					tg.NewInlineKeyboardButtonData(addCameraRtsp, toAdd),
+				),
+			)
+
+			err = bot.SendMessage(
+				chatId,
+				"Камера не была добавлена. Попробуйте позднее",
+				&buttons,
+			)
+			if err != nil {
+				return fmt.Errorf("Can not send msg: %s", err)
+			}
+
+			return fmt.Errorf("Can not add camera: %s", err)
+		}
+
+		// Подтверждаем сохранение
+		err = bot.SendMessage(
+			chatId,
+			fmt.Sprintf("Камера успешно добавлена!\nНазвание: %s\nRTSP-адрес: %s\n",
+				cameraName,
+				UserRtsp[chatId]),
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("Can not send msg: %s", err)
+		}
+
+		// Очищаем состояние пользователя после завершения процесса
+		delete(UserStates, chatId)
+		delete(UserRtsp, chatId)
+
+		if err := bot.MakeNewMain(chatId); err != nil {
+			return fmt.Errorf("Can not make new main: %s", err)
+		}
+	} else if UserStates[chatId] == "waitingForNameOfCamera" {
+		cameraName := msg.Text
+		s := CameraName[chatId]
+
+		camera, err := bot.camerasAPI.GetCameraByName(s)
+		if err != nil {
+			return fmt.Errorf("Can not get camera by name: %s", err)
+		}
+
+		err = bot.camerasAPI.UpdateCamera(models.Camera{
+			Name: cameraName,
+			Rtsp: camera.Rtsp,
+		})
+		if err != nil {
+			return fmt.Errorf("Can not update camera name: %s", err)
+		}
+
+		// Подтверждаем сохранение
+		err = bot.SendMessage(
+			chatId,
+			fmt.Sprintf("Камера успешно обновлена!\nНазвание: %s\nRTSP-адрес: %s\n",
+				cameraName,
+				camera.Rtsp),
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("Can not send msg: %s", err)
+		}
+
+		// Очищаем состояние пользователя после завершения процесса
+		delete(UserStates, chatId)
+		delete(UserRtsp, chatId)
+		delete(CameraName, chatId)
+
+		if err := bot.MakeNewMain(chatId); err != nil {
+			return fmt.Errorf("Can not make new main: %s", err)
 		}
 	} else {
 		msg := tg.NewMessage(msg.Chat.ID, "Я не знаю такую команду :(\nЧтобы начать мной пользоваться, отправьте мне слово \"Начать\"")
@@ -182,6 +298,31 @@ func (bot *Bot) NotifyAlert(fileName string) error {
 		if err != nil {
 			bot.log.Error().Msgf("Invalid send file: %s to user %d", err, user.Chat_ID)
 		}
+	}
+
+	return nil
+}
+
+func (bot *Bot) MakeNewMain(chatId int64) error {
+	buttons := tg.NewInlineKeyboardMarkup(
+		tg.NewInlineKeyboardRow(
+			tg.NewInlineKeyboardButtonData(listCameras, toCameras),
+		),
+		tg.NewInlineKeyboardRow(
+			tg.NewInlineKeyboardButtonData(addCameraAuto, toAddCameraAuto),
+		),
+		tg.NewInlineKeyboardRow(
+			tg.NewInlineKeyboardButtonData(addCameraRtsp, toAdd),
+		),
+	)
+
+	err := bot.SendMessage(
+		chatId,
+		menu,
+		&buttons,
+	)
+	if err != nil {
+		return fmt.Errorf("Can not send msg: %s", err)
 	}
 
 	return nil

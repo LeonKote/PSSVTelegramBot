@@ -18,8 +18,9 @@ type Config struct {
 	UsersApi   string
 	CamerasApi string
 
-	Address   string
-	BasicAuth string
+	Address    string
+	BasicAuth  string
+	TargetAddr string
 }
 
 const (
@@ -32,6 +33,8 @@ const (
 
 	address = "ADDRESS"
 	auth    = "APIS_AUTH_BASIC"
+
+	targetAddr = "TARGET_ADDR"
 
 	base = 10
 	size = 64
@@ -50,5 +53,6 @@ func MakeConfig(logger zerolog.Logger) *Config {
 		CamerasApi: os.Getenv(camerasApi),
 		Address:    os.Getenv(address),
 		BasicAuth:  os.Getenv(auth),
+		TargetAddr: os.Getenv(targetAddr),
 	}
 }

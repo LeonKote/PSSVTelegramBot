@@ -29,11 +29,12 @@ type Application struct {
 	cfg         config.Config
 }
 
+// Функция-конструктор для создания нового объекта Application
 func MakeApplication(ctx context.Context, db *sqlx.DB, cfg config.Config) *Application {
 	cams := make(map[string]*api.Camera)
 	minioClient, err := minio.New(cfg.Endpoint, &minio.Options{
 		Creds:  credentials.NewStaticV4(cfg.AccessKeyID, cfg.SecretAccessKey, ""),
-		Secure: cfg.UseSSL,
+		Secure: false,
 	})
 	if err != nil {
 		cfg.Logger.Panic().Msgf("Invalid connect to minio: %s", err)

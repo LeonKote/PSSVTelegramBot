@@ -335,3 +335,52 @@ func (transport *Transport) GetApiCamerasDirFileNameGet(w http.ResponseWriter, r
 		return
 	}
 }
+
+// Set godoc
+//
+// @Router /api/cameras/update [put]
+// @Summary Обновление данных камеры
+// @Description При обращении, обновляет данные камеры
+//
+// @Tags APIs
+// @Accept       application/json
+// @Produce      application/json
+// @Param 	request	body	camera	true	"Тело запроса"
+//
+// @Success 204 {object} nil "Запрос выполнен успешно"
+// @Failure 400 {object} nil "Ошибка валидации данных"
+// @Failure 401 {object} nil "Ошибка авторизации"
+// @Failure 500 {object} nil "Произошла внутренняя ошибка сервера"
+func (transport *Transport) PutApiCamerasUpdate(w http.ResponseWriter, r *http.Request) {
+	log, ok := r.Context().Value(log.CtxKey).(zerolog.Logger)
+	if !ok {
+		utils.WriteString(zerolog.Logger{}, w, http.StatusInternalServerError, fmt.Errorf("Invalid logger"), "Невалидный логгер")
+		return
+	}
+
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		utils.WriteString(log, w, http.StatusInternalServerError, fmt.Errorf("Invalid read body: %s", err), "Не удалось прочитать тело запроса")
+		return
+	}
+
+	var updateCamera models.Camera
+	if err := jsoniter.Unmarshal(data, &updateCamera); err != nil {
+		utils.WriteString(log, w, http.StatusBadRequest, fmt.Errorf("Invalid parse body: %s", err), "Не удалось распарсить тело запроса формата JSON")
+		return
+	}
+
+	ok, err = transport.app.repo.UpdateCamera(updateCamera)
+	if err != nil {
+		utils.WriteString(log, w, http.StatusInternalServerError, err, "Не удалось обновить данные камеры")
+		return
+	}
+
+	if ok {
+		utils.WriteNoContent(log, w)
+		return
+	} else {
+		utils.WriteString(log, w, http.StatusOK, nil, "Камера не существует")
+		return
+	}
+}

@@ -119,7 +119,10 @@ func (f *fileRepo) UpdateFileData(filePath string, status string, fileSize int) 
 }
 
 func (f *fileRepo) GetReadyFile() ([]models.File, error) {
-	const query = "SELECT chat_id, camera_name, uuid, file_path, file_size, file_type, status FROM main.file_metadata WHERE status = 'ready';"
+	const query = `
+SELECT chat_id, camera_name, uuid, file_path, file_size, file_type, status
+FROM main.file_metadata
+WHERE status = 'ready';`
 	var files []models.File
 	if err := f.db.Select(&files, query); err != nil {
 		return nil, fmt.Errorf("Invalid SELECT main.file_metadata: %s", err)

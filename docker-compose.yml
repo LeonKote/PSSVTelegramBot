@@ -36,6 +36,7 @@ services:
       - camnet
     ports:
       - "9001:9001"
+      - "9000:9000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
       interval: 2s
