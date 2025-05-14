@@ -40,20 +40,19 @@ func (api *CameraAPI) GetAllCameras() ([]models.Camera, error) {
 	return allCameras, nil
 }
 
-func (api *CameraAPI) AddCamera(user models.User) (bool, error) {
+func (api *CameraAPI) AddCamera(camera models.Camera) error {
 	const endpoint = "/cameras/add"
 
-	resp, err := api.client.R().SetBody(user).Post(endpoint)
+	resp, err := api.client.R().SetBody(camera).Post(endpoint)
 	if err != nil {
-		return false, fmt.Errorf("Can not add camera: %w", err)
+		return fmt.Errorf("Can not add camera: %w", err)
 	}
 
-	allUsers := []models.User{}
-	if err := jsoniter.Unmarshal(resp.Body(), &allUsers); err != nil {
-		return false, fmt.Errorf("Can not unmarshal all cameras: %w", err)
+	if resp.StatusCode() != 204 {
+		return fmt.Errorf("Can not add camera: %s", resp.Status())
 	}
 
-	return true, nil
+	return nil
 }
 
 func (api *CameraAPI) GetCameraByName(name string) (models.Camera, error) {
@@ -103,4 +102,34 @@ func (api *CameraAPI) GetFile(chatId string, uuid string) ([]byte, error) {
 	}
 
 	return resp.Body(), nil
+}
+
+func (api *CameraAPI) RemoveCamera(name string) error {
+	const endpoint = "/cameras/delete-%s"
+
+	resp, err := api.client.R().Delete(fmt.Sprintf(endpoint, name))
+	if err != nil {
+		return fmt.Errorf("Can not remove camera: %w", err)
+	}
+
+	if resp.StatusCode() != 204 {
+		return fmt.Errorf("Can not remove camera: %s", resp.Status())
+	}
+
+	return nil
+}
+
+func (api *CameraAPI) UpdateCamera(camera models.Camera) error {
+	const endpoint = "/cameras/update"
+
+	resp, err := api.client.R().SetBody(camera).Put(endpoint)
+	if err != nil {
+		return fmt.Errorf("Can not update camera: %w", err)
+	}
+
+	if resp.StatusCode() != 204 {
+		return fmt.Errorf("Can not update camera: %s", resp.Status())
+	}
+
+	return nil
 }

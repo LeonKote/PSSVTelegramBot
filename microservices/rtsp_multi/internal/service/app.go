@@ -53,7 +53,6 @@ func (app *Application) Run(log zerolog.Logger, ctx context.Context) error {
 	}()
 
 	// Подключаем stderr для логов ffmpeg
-
 	stderr := &bytes.Buffer{}
 	cmd := ffmpeg.Input(app.rtspUrl, ffmpeg.KwArgs{
 		"fflags":         "+genpts",

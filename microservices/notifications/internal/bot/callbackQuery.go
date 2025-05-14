@@ -11,6 +11,8 @@ import (
 
 func (bot *Bot) HandleCallback(update tg.Update) error {
 	data := update.CallbackData()
+	chatId := update.CallbackQuery.Message.Chat.ID
+	msgId := update.CallbackQuery.Message.MessageID
 
 	// Разбираем данные кнопки ("approve:123456789")
 	firstPart, secondPart, err := bot.parseCallbackData(data)
@@ -23,115 +25,15 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 	}
 
 	switch firstPart {
-	case approve:
-		userID, err := strconv.ParseInt(secondPart, 10, 64)
-		if err != nil {
-			return fmt.Errorf("Can not parse user id: %s", err)
+	case approve: // разрешение на использование бота
+		if err := bot.Approve(chatId, secondPart, &update); err != nil {
+			return fmt.Errorf("Can not approve: %s", err)
 		}
-
-		user, err := bot.usersAPI.GetUserByChatID(userID)
-		if err != nil {
-			return fmt.Errorf("Can not get user by chat_id: %s", err)
+	case reject: // отказ в использовании бота
+		if err := bot.Reject(chatId, secondPart, &update); err != nil {
+			return fmt.Errorf("Can not reject: %s", err)
 		}
-
-		ok, err := bot.usersAPI.UpdateUser(models.User{
-			Chat_ID:  userID,
-			Username: user.Username,
-			Name:     user.Name,
-			Is_Admin: false,
-			Status:   approved,
-		})
-		if err != nil || !ok {
-			return fmt.Errorf("Can not update user: %s", err)
-		}
-
-		messageID, exists := LastActions[userID]
-		if !exists {
-			return fmt.Errorf("Can not find message by user_id: %s", err)
-		}
-
-		newMsg, err := bot.EditMessage(
-			userID,
-			messageID,
-			"🎉 Вам одобрили доступ!",
-			nil,
-		)
-		if err != nil {
-			return fmt.Errorf("Can not edit msg: %s", err)
-		} else {
-			LastActions[userID] = newMsg.MessageID
-		}
-
-		_, err = bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
-			update.CallbackQuery.Message.MessageID,
-			"✅ Пользователь одобрен!",
-			nil,
-		)
-		if err != nil {
-			return fmt.Errorf("Can not edit msg: %s", err)
-		}
-
-		buttons := tg.NewInlineKeyboardMarkup(
-			tg.NewInlineKeyboardRow(
-				tg.NewInlineKeyboardButtonData(start, toMain),
-			),
-		)
-
-		text := "Нажмите кнопку \"Начать\", чтобы начать испольование бота."
-		if err = bot.SendMessage(userID, text, &buttons); err != nil {
-			return fmt.Errorf("Can not edit msg: %s", err)
-		}
-	case reject:
-		userID, err := strconv.ParseInt(secondPart, 10, 64)
-		if err != nil {
-			return fmt.Errorf("Can not parse user id: %s", err)
-		}
-
-		user, err := bot.usersAPI.GetUserByChatID(userID)
-		if err != nil {
-			return fmt.Errorf("Can not get user by chat_id: %s", err)
-		}
-
-		ok, err := bot.usersAPI.UpdateUser(models.User{
-			Chat_ID:  userID,
-			Username: user.Username,
-			Name:     user.Name,
-			Is_Admin: false,
-			Status:   rejected,
-		})
-		if err != nil || !ok {
-			return fmt.Errorf("Can not update user: %s", err)
-		}
-
-		// Сохранение ID последнего сообщения от пользователя
-		messageID, exists := LastActions[userID]
-		if !exists {
-			return fmt.Errorf("Can not find message by user_id: %s", err)
-		}
-
-		newMsg, err := bot.EditMessage(
-			userID,
-			messageID,
-			"🚫 Ваш запрос отклонён.",
-			nil,
-		)
-		if err != nil {
-			return fmt.Errorf("Can not edit msg: %s", err)
-		} else {
-			LastActions[userID] = newMsg.MessageID
-		}
-
-		_, err = bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
-			update.CallbackQuery.Message.MessageID,
-			"❌ Пользователь отклонён.",
-			nil,
-		)
-		if err != nil {
-			return fmt.Errorf("Can not edit msg: %s", err)
-		}
-	case toCameras:
+	case toCameras: // кнопка перехода к выбору камеры
 		cameras, err := bot.camerasAPI.GetAllCameras()
 		if err != nil {
 			return fmt.Errorf("Can not get all cameras: %s", err)
@@ -139,7 +41,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 
 		camerasMarkup := bot.getCameraButtons(cameras)
 		_, err = bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
+			chatId,
 			update.CallbackQuery.Message.MessageID,
 			listCameras,
 			&camerasMarkup,
@@ -147,7 +49,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		if err != nil {
 			return fmt.Errorf("Can not send msg: %s", err)
 		}
-	case toUsers:
+	case toUsers: // кнопка перехода к просмотру пользователей
 		buttons := tg.NewInlineKeyboardMarkup(
 			tg.NewInlineKeyboardRow(
 				tg.NewInlineKeyboardButtonData(back, toMain),
@@ -155,7 +57,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		)
 
 		_, err = bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
+			chatId,
 			update.CallbackQuery.Message.MessageID,
 			addCameraAuto,
 			&buttons,
@@ -163,7 +65,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		if err != nil {
 			return fmt.Errorf("Can not make button: %s", err)
 		}
-	case toAdd:
+	case toAdd: // кнопка добавления камеры вручную
 		buttons := tg.NewInlineKeyboardMarkup(
 			tg.NewInlineKeyboardRow(
 				tg.NewInlineKeyboardButtonData(back, toMain),
@@ -171,28 +73,35 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		)
 
 		_, err = bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
+			chatId,
 			update.CallbackQuery.Message.MessageID,
-			addCameraMac,
+			"Введите RTSP-адрес камеры:",
 			&buttons,
 		)
 		if err != nil {
 			return fmt.Errorf("Can not make button: %s", err)
 		}
-	case toMain:
+
+		UserStates[chatId] = "waitingForRTSP"
+	case toAddCameraAuto: // кнопка добавления камеры автоматически
+		if err := bot.autoAddCamera(chatId, &update); err != nil {
+			return fmt.Errorf("Can not auto add camera: %s", err)
+		}
+
+	case toMain: // кнопка перехода в главное меню
 		buttons := tg.NewInlineKeyboardMarkup(
 			tg.NewInlineKeyboardRow(
 				tg.NewInlineKeyboardButtonData(listCameras, toCameras),
 			),
 			tg.NewInlineKeyboardRow(
-				tg.NewInlineKeyboardButtonData(addCameraAuto, toUsers),
+				tg.NewInlineKeyboardButtonData(addCameraAuto, toAddCameraAuto),
 			),
 			tg.NewInlineKeyboardRow(
-				tg.NewInlineKeyboardButtonData(addCameraMac, toAdd),
+				tg.NewInlineKeyboardButtonData(addCameraRtsp, toAdd),
 			),
 		)
 		_, err := bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
+			chatId,
 			update.CallbackQuery.Message.MessageID,
 			menu,
 			&buttons,
@@ -200,7 +109,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		if err != nil {
 			return fmt.Errorf("Can not make button: %s", err)
 		}
-	case toCamera:
+	case toCamera: // кнопка перехода к камере
 		buttons := tg.NewInlineKeyboardMarkup(
 			tg.NewInlineKeyboardRow(
 				tg.NewInlineKeyboardButtonData("Сделать фото", fmt.Sprintf("%s:%s", toMakePhoto, secondPart)),
@@ -210,11 +119,17 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 				tg.NewInlineKeyboardButtonData(infoCamera, fmt.Sprintf("%s:%s", toCameraInfo, secondPart)),
 			),
 			tg.NewInlineKeyboardRow(
+				tg.NewInlineKeyboardButtonData("Изменить название камеры", fmt.Sprintf("%s:%s", toChangeNameOfCamera, secondPart)),
+			),
+			tg.NewInlineKeyboardRow(
+				tg.NewInlineKeyboardButtonData("Удалить камеру", fmt.Sprintf("%s:%s", toDeleteCamera, secondPart)),
+			),
+			tg.NewInlineKeyboardRow(
 				tg.NewInlineKeyboardButtonData(back, toCameras),
 			),
 		)
 		_, err := bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
+			chatId,
 			update.CallbackQuery.Message.MessageID,
 			menu,
 			&buttons,
@@ -222,13 +137,40 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		if err != nil {
 			return fmt.Errorf("Can not make button: %s", err)
 		}
-	case toMakePhoto:
-		msgId := update.CallbackQuery.Message.MessageID
+	case toChangeNameOfCamera:
+		buttons := tg.NewInlineKeyboardMarkup(
+			tg.NewInlineKeyboardRow(
+				tg.NewInlineKeyboardButtonData(back, fmt.Sprintf("%s:%s", toCamera, secondPart)),
+			),
+		)
 
+		_, err := bot.EditMessage(
+			chatId,
+			update.CallbackQuery.Message.MessageID,
+			"Введите новое название камеры:",
+			&buttons,
+		)
+		if err != nil {
+			return fmt.Errorf("Can not make button: %s", err)
+		}
+
+		UserStates[chatId] = "waitingForNameOfCamera"
+		CameraName[chatId] = secondPart
+	case toDeleteCamera:
+		if err := bot.camerasAPI.RemoveCamera(secondPart); err != nil {
+			return fmt.Errorf("Can not remove camera: %s", err)
+		}
+
+		bot.EditMessage(chatId, msgId, "Камера удалена", nil)
+
+		if err := bot.MakeNewMain(chatId); err != nil {
+			return fmt.Errorf("Can not make new main: %s", err)
+		}
+	case toMakePhoto: // кнопка сделать фото
 		if err := bot.Processing(update, secondPart, 0, msgId); err != nil {
 			return fmt.Errorf("Can not process: %s", err)
 		}
-	case toChooseDuration:
+	case toChooseDuration: // кнопка выбора продолжительности записи видео
 		buttons := tg.NewInlineKeyboardMarkup(
 			tg.NewInlineKeyboardRow(
 				tg.NewInlineKeyboardButtonData("5 секунд", fmt.Sprintf("%s:%s/%d", toMakeVideo, secondPart, 5)),
@@ -246,7 +188,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		)
 
 		_, err := bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
+			chatId,
 			update.CallbackQuery.Message.MessageID,
 			"Выбор продолжительности записи видео:",
 			&buttons,
@@ -254,7 +196,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		if err != nil {
 			return fmt.Errorf("Can not make button: %s", err)
 		}
-	case toMakeVideo:
+	case toMakeVideo: // кнопка сделать видео
 		msgId := update.CallbackQuery.Message.MessageID
 		parts := strings.Split(secondPart, "/")
 
@@ -266,13 +208,11 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		if err := bot.Processing(update, parts[0], duration, msgId); err != nil {
 			return fmt.Errorf("Can not process: %s", err)
 		}
-	case toCameraInfo:
+	case toCameraInfo: // кнопка информации о камере
 		msgId := update.CallbackQuery.Message.MessageID
 		text := "Информация о камере\n" +
 			"Название камеры: %s\n" +
-			"RTSP: %s\n" +
-			"IP:" +
-			"Мак-адрес:"
+			"RTSP: %s\n"
 
 		cameraInfo, err := bot.getCameraInfo(secondPart)
 		if err != nil {
@@ -286,7 +226,7 @@ func (bot *Bot) HandleCallback(update tg.Update) error {
 		)
 
 		_, err = bot.EditMessage(
-			update.CallbackQuery.Message.Chat.ID,
+			chatId,
 			msgId,
 			fmt.Sprintf(text, cameraInfo.Name, cameraInfo.Rtsp),
 			&buttons,
@@ -358,6 +298,7 @@ func (bot *Bot) makeFile(record models.Record) (int, error) {
 	return msg.MessageID, nil
 }
 
+// Запись фото/видео и загрузка в s3
 func (bot *Bot) Processing(update tg.Update, nameCamera string, duration int, msgId int) error {
 	var record models.Record
 	if duration == 0 {
@@ -389,10 +330,10 @@ func (bot *Bot) Processing(update tg.Update, nameCamera string, duration int, ms
 			tg.NewInlineKeyboardButtonData(listCameras, toCameras),
 		),
 		tg.NewInlineKeyboardRow(
-			tg.NewInlineKeyboardButtonData(addCameraAuto, toUsers),
+			tg.NewInlineKeyboardButtonData(addCameraAuto, toAddCameraAuto),
 		),
 		tg.NewInlineKeyboardRow(
-			tg.NewInlineKeyboardButtonData(addCameraMac, toAdd),
+			tg.NewInlineKeyboardButtonData(addCameraRtsp, toAdd),
 		),
 	)
 
@@ -404,6 +345,7 @@ func (bot *Bot) Processing(update tg.Update, nameCamera string, duration int, ms
 	return nil
 }
 
+// Получение информации о камере
 func (bot *Bot) getCameraInfo(nameCamera string) (models.Camera, error) {
 	camera, err := bot.camerasAPI.GetCameraByName(nameCamera)
 	if err != nil {
